@@ -7,7 +7,7 @@ def main():
     # Inicializácia WGPU Rendereru (ktorý už interné rieši plátno aj vykresľovanie)
     renderer = Renderer(title="VoidSeek", width=WIDTH, height=HEIGHT)
     
-    print("Okno úspešne vytvorené s wgpu. Pre ukončenie ho zavrite.")
+    print("Okno úspešne vytvorené s wgpu. Pre ukončenie ho zavrite/stlačte ESC.")
 
     # Spustenie hlavnej synchrónnej slučky pre rendercanvas / glfw okno
     loop.run()
