@@ -1,6 +1,6 @@
 # VoidSeek
 
-C++ / Python grafický projekt využívajúci GLFW a WGPU.
+Python grafický projekt využívajúci GLFW a WGPU.
 
 ## Lokálna inštalácia knižníc (Odporúčané)
 
