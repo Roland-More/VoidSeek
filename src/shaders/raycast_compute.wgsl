@@ -48,7 +48,7 @@ fn cs_main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let x = global_id.x;
     if (x >= u32(camera.resolution.x)) { return; }
 
-    let render_distance = map_settings.render_distance*2; // Pridáme 1, aby sme zahrnuli aj tile, na ktorej je kamera
+    let max_steps = u32(f32(map_settings.render_distance) * 1.4143) + 2u;
 
     let camera_x = 2.0 * f32(x) / camera.resolution.x - 1.0; // Zisti kde sa nachádza x pixel v zornom poli (-1 až 1)
     let ray_dir = camera.direction + camera.plane * camera_x; // Zisti smer lúča pre tento pixel
@@ -84,7 +84,7 @@ fn cs_main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     var side = 0;
     var hit_wall_tex_id = 0u;
 
-    for (var i: u32 = 0; i < render_distance; i++) {
+    for (var i: u32 = 0; i < max_steps; i++) {
         if (side_dist.x < side_dist.y) { // Posuneme sa na dalsiu tile podla toho ktora je bližšie
             side_dist.x += delta_dist.x;
             map_pos.x += step_dir.x;

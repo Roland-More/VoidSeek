@@ -63,7 +63,7 @@ class MovementSystem:
                     pos.y += move_y
                     
             # Vypísanie do konzoly
-            print(f"Player position: ({pos.x:.2f}, {pos.y:.2f}), angle: {math.degrees(rot.angle):.2f}°")
+            # print(f"Player position: ({pos.x:.2f}, {pos.y:.2f}), angle: {math.degrees(rot.angle):.2f}°")
 
     @staticmethod
     def is_wall(check_x: float, check_y: float, map_walls: list[int]) -> bool:

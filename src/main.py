@@ -1,7 +1,10 @@
+import ctypes
 from core.renderer import Renderer
 from rendercanvas.auto import loop
 
-WIDTH, HEIGHT = 800, 600
+# Získanie rozlíšenia obrazovky (pre Windows) a zmenšenie na štvrtinu
+user32 = ctypes.windll.user32
+WIDTH, HEIGHT = user32.GetSystemMetrics(0) // 4, user32.GetSystemMetrics(1) // 4
 
 
 def main():
