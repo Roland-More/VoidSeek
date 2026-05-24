@@ -10,6 +10,7 @@ MAX_MAP_TILES = 64
 TILE_SIZE = 64
 user32 = ctypes.windll.user32
 RENDER_WIDTH, RENDER_HEIGHT = user32.GetSystemMetrics(0) // 4, user32.GetSystemMetrics(1) // 4
+MAX_SPRITES = 4096
 
 class BindScope(Enum):
     Camera = auto()
@@ -18,10 +19,12 @@ class BindScope(Enum):
     BlitTexture = auto()
     RayHits = auto()
     ComputeRayHits = auto()
+    SpriteInstances = auto()
 
 class RenderPipelineType(Enum):
     Raycast = auto()
     Blit = auto()
+    Sprite = auto()
 
 class ComputePipelineType(Enum):
     Raycast = auto()

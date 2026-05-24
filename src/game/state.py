@@ -1,6 +1,6 @@
 from .input import InputState
 from .ecs import World
-from .components import Position, Rotation, Velocity, PlayerController
+from .components import Position, Rotation, Velocity, PlayerController, Sprite
 from .systems import PlayerInputSystem, MovementSystem
 
 class GameState:
@@ -15,7 +15,13 @@ class GameState:
         self.world.add_component(self.player_entity, Velocity(speed=125.0))
         self.world.add_component(self.player_entity, PlayerController())
         self.world.add_component(self.player_entity, self.input)
-        
+
+        # Príklad vytvorenia spritu v state.py
+        self.barrel_entity = self.world.create_entity()
+        # Súradnice spritu posielame v mapových jednotkách (napr. stred políčka 1.5, 6.5)
+        self.world.add_component(self.barrel_entity, Position(x=1.5, y=6.5))
+        self.world.add_component(self.barrel_entity, Sprite(z=0.0, scale=1.0, atlas_index=1))
+
         self.map_walls = [
             1,1,1,1,1,1,1,1,
             1,0,1,0,0,0,0,1,

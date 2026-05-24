@@ -19,3 +19,9 @@ class Velocity:
 @dataclass
 class PlayerController:
     sensitivity: float = 0.0015
+
+@dataclass
+class Sprite:
+    z: float = 0.0
+    scale: float = 1.0 
+    atlas_index: int = 0

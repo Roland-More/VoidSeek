@@ -2,6 +2,7 @@ import glfw
 import wgpu
 import time
 import ctypes
+import struct  # Potrebné pre serializáciu dát spritov do buffra
 from rendercanvas.auto import RenderCanvas
 from core.backend.pipeline import Builder as RenderPipelineBuilder
 from core.backend.compute_pipeline import Builder as ComputePipelineBuilder
@@ -10,6 +11,7 @@ from core.backend.atlas import Builder as AtlasBuilder
 from core.backend.texture import new_offscreen_texture
 from core.backend.definitions import *
 from game.state import GameState
+from game.components import Position, Sprite  # Import ECS komponentov pre dopytovanie
 
 class Renderer:
     def __init__(self, title="VoidSeek", width=800, height=600):
@@ -50,7 +52,7 @@ class Renderer:
         )
         self.blit_resources = BlitResources(offscreen_view, blit_bind_group)
 
-        # Atlas textúr
+        # Atlas textúr pre prostredie (Steny, Podlahy, Stropy)
         atlas_texture = self._create_atlas_texture(self.device, self.queue, wgpu.TextureFormat.rgba8unorm_srgb)
         atlas_view = atlas_texture.create_view(
             label="Texture Array View",
@@ -75,7 +77,36 @@ class Renderer:
         )
         self.atlas_resources = AtlasResources(atlas_bind_group, atlas_view)
 
-        # Buffer pre Ray Hits
+        # =====================================================================
+        # Inicializácia Atlasu pre Sprity
+        # =====================================================================
+        atlas_sprite_texture = self._create_atlas_texture(
+            self.device, self.queue, wgpu.TextureFormat.rgba8unorm_srgb, 
+            ["Sprite-bg.png", "Sprite-no-bg.png"]
+        )
+        atlas_sprite_view = atlas_sprite_texture.create_view(
+            label="Sprite Texture Array View",
+            dimension=wgpu.TextureViewDimension.d2_array
+        )
+        atlas_sprite_sampler = self.device.create_sampler(
+            label="Sprite Retro Sampler",
+            address_mode_u=wgpu.AddressMode.clamp_to_edge,
+            address_mode_v=wgpu.AddressMode.clamp_to_edge,
+            address_mode_w=wgpu.AddressMode.clamp_to_edge,
+            mag_filter=wgpu.FilterMode.nearest,
+            min_filter=wgpu.FilterMode.nearest,
+            mipmap_filter=wgpu.MipmapFilterMode.nearest,
+        )
+        self.atlas_sprite_bind_group = self.device.create_bind_group(
+            label="Sprite Texture Array Bind Group",
+            layout=self.bind_group_layouts[BindScope.AtlasTexture],
+            entries=[
+                {"binding": 0, "resource": atlas_sprite_view},
+                {"binding": 1, "resource": atlas_sprite_sampler},
+            ]
+        )
+
+        # Buffer pre Ray Hits (1D Z-Buffer pre orezávanie spritov za stenami)
         self.ray_hits_buffer = self.device.create_buffer(
             label="Ray Hits Buffer",
             size=RENDER_WIDTH * 16,
@@ -86,6 +117,22 @@ class Renderer:
             layout=self.bind_group_layouts[BindScope.RayHits],
             entries=[{"binding": 0, "resource": {"buffer": self.ray_hits_buffer, "offset": 0, "size": self.ray_hits_buffer.size}}]
         )
+
+        # =====================================================================
+        # Buffer pre Inštancie Spritov (ECS dáta posielané na GPU)
+        # =====================================================================
+        # Štruktúra jedného spritu má 32 bajtov: position(vec3=12b) + scale(4b) + atlas_index(4b) + _padding(12b)
+        self.sprites_buffer = self.device.create_buffer(
+            label="Sprite Instances Buffer",
+            size=MAX_SPRITES * 32,
+            usage=wgpu.BufferUsage.STORAGE | wgpu.BufferUsage.COPY_DST
+        )
+        self.sprites_bind_group = self.device.create_bind_group(
+            label="Sprite Instances Bind Group",
+            layout=self.bind_group_layouts[BindScope.SpriteInstances],
+            entries=[{"binding": 0, "resource": {"buffer": self.sprites_buffer, "offset": 0, "size": self.sprites_buffer.size}}]
+        )
+        self.sprite_count = 0
 
         # Inicializácia kamery s defaultnými hodnotami
         camera_data = (ctypes.c_float * 8)(*([0.0]*8))
@@ -144,7 +191,7 @@ class Renderer:
 
         builder.add_entry({
             "binding": 0,
-            "visibility": wgpu.ShaderStage.FRAGMENT,
+            "visibility": wgpu.ShaderStage.VERTEX | wgpu.ShaderStage.FRAGMENT,
             "buffer": {"type": wgpu.BufferBindingType.uniform}
         })
         layouts[BindScope.Camera] = builder.build("Camera Bind Group Layout")
@@ -156,7 +203,7 @@ class Renderer:
         })
         builder.add_entry({
             "binding": 1,
-            "visibility": wgpu.ShaderStage.FRAGMENT,
+            "visibility": wgpu.ShaderStage.VERTEX | wgpu.ShaderStage.FRAGMENT,
             "buffer": {"type": wgpu.BufferBindingType.uniform}
         })
         layouts[BindScope.Map] = builder.build("Map Bind Group Layout")
@@ -191,6 +238,13 @@ class Renderer:
             "buffer": {"type": wgpu.BufferBindingType.read_only_storage}
         })
         layouts[BindScope.RayHits] = builder.build("Ray Hits Fragment Layout")
+
+        builder.add_entry({
+            "binding": 0,
+            "visibility": wgpu.ShaderStage.VERTEX,
+            "buffer": {"type": wgpu.BufferBindingType.read_only_storage}
+        })
+        layouts[BindScope.SpriteInstances] = builder.build("Sprite Instances Layout")
 
         builder.add_entry({
             "binding": 0,
@@ -229,6 +283,17 @@ class Renderer:
         raycast_builder.add_bind_group_layout(layouts[BindScope.RayHits])
         pipelines[RenderPipelineType.Raycast] = raycast_builder.build("Raycast Pipeline")
 
+        #Sprite
+        sprite_builder = RenderPipelineBuilder(device)
+        sprite_builder.set_shader_module("sprite.wgsl", "vs_main", "fs_main")
+        sprite_builder.set_pixel_format(offscreen_format)
+        sprite_builder.add_bind_group_layout(layouts[BindScope.Camera])
+        sprite_builder.add_bind_group_layout(layouts[BindScope.RayHits])
+        sprite_builder.add_bind_group_layout(layouts[BindScope.AtlasTexture])
+        sprite_builder.add_bind_group_layout(layouts[BindScope.SpriteInstances])
+        sprite_builder.add_bind_group_layout(layouts[BindScope.Map])
+        pipelines[RenderPipelineType.Sprite] = sprite_builder.build("Sprite Pipeline")
+
         # Blit
         blit_builder = RenderPipelineBuilder(device)
         blit_builder.set_shader_module("blit.wgsl", "vs_main", "fs_main")
@@ -238,14 +303,15 @@ class Renderer:
 
         return pipelines
 
-    def _create_atlas_texture(self, device, queue, format):
+    def _create_atlas_texture(self, device, queue, format, textures_list=None):
+        if textures_list is None:
+            textures_list = ["Wall-Texture.png", "Floor-Texture.png", "Ceiling-Texture.png"]
         builder = AtlasBuilder(device, queue)
         builder.set_pixel_format(format)
         try:
-            builder.add_textures(["Wall-Texture.png", "Floor-Texture.png", "Ceiling-Texture.png"])
+            builder.add_textures(textures_list)
         except Exception as e:
             print(f"Varovanie: Textúry atlasu sa nepodarilo načítať. Chyba: {e}")
-            # Ak neexistujú dočasne stvoria dummy na udržanie programu v chode
         return builder.build("Atlas Texture")
 
     def _build_compute_pipelines(self, device, layouts):
@@ -298,7 +364,6 @@ class Renderer:
         else:
             glfw.set_input_mode(self.canvas._window, glfw.CURSOR, glfw.CURSOR_DISABLED)
             self._is_mouse_locked = True
-            # Aby pri locknuti neskocila mys, ziskame jej prvu poziciu az pri dalsom evente
             if self.canvas._window:
                 x, _ = glfw.get_cursor_pos(self.canvas._window)
                 self._last_mouse_x = x
@@ -320,9 +385,6 @@ class Renderer:
                 mode.refresh_rate,
             )
             self._is_fullscreen = True
-            
-        # Ochrana proti nechcenému trhnutiu kamery po prestavení okna
-        # Namiesto rátania starej pozície ju po zmene resetneme
         self._last_mouse_x = None
 
     def draw_frame(self):
@@ -330,16 +392,13 @@ class Renderer:
         delta_time = current_time - self.last_time
         self.last_time = current_time
         
-        # --- ZÍSKAVANIE KONTINUÁLNYCH VSTUPOV PRIAMO Z GLFW ---
         window = self.canvas._window
         if window:
-            # WASD pohyb
             self.game_state.input.forward = glfw.get_key(window, glfw.KEY_W) == glfw.PRESS
             self.game_state.input.backward = glfw.get_key(window, glfw.KEY_S) == glfw.PRESS
             self.game_state.input.left = glfw.get_key(window, glfw.KEY_A) == glfw.PRESS
             self.game_state.input.right = glfw.get_key(window, glfw.KEY_D) == glfw.PRESS
 
-            # Myš rotácia
             if self._is_mouse_locked:
                 x, _ = glfw.get_cursor_pos(window)
                 if self._last_mouse_x is not None:
@@ -349,11 +408,45 @@ class Renderer:
             else:
                 self._last_mouse_x = None
 
-        # Odošle spracovaný vstup a časový rozdiel do hry
         self.game_state.update(delta_time)
         
         cam_x, cam_y, cam_angle = self.game_state.camera_pose()
         self.update_camera(cam_x, cam_y, cam_angle)
+
+        # =====================================================================
+        # ECS DOSLEDNÉ SPRACOVANIE A TRIEDENIE SPRITOV (Painter's Algorithm)
+        # =====================================================================
+        cam_x_map = cam_x / 64.0  # Prepočet pozície hráča na mapové jednotky (TILE_SIZE=64)
+        cam_y_map = cam_y / 64.0
+
+        # Dopyt na všetky entity disponujúce komponentom Position a zároveň Sprite
+        sprite_entities = self.game_state.world.get_components(Position, Sprite)
+        
+        # Výpočet euklidovskej vzdialenosti k hráčovi na zoradenie
+        sprites_with_dist = []
+        for entity_id, (pos, sprite_comp) in sprite_entities:
+            dist_sq = (pos.x - cam_x_map)**2 + (pos.y - cam_y_map)**2
+            sprites_with_dist.append((dist_sq, pos, sprite_comp))
+        
+        # Zoradíme zostupne (najprv vzdialené, potom blízke)
+        sprites_with_dist.sort(key=lambda s: s[0], reverse=True)
+        
+        self.sprite_count = min(len(sprites_with_dist), 4096)
+        
+        if self.sprite_count > 0:
+            sprite_bytes = bytearray()
+            for i in range(self.sprite_count):
+                _, pos, sprite_comp = sprites_with_dist[i]
+                # Binárna serializácia štruktúry zodpovedajúcej WGSL: position(3xf32), scale(f32), atlas_index(u32), padding(3xu32)
+                sprite_bytes.extend(struct.pack(
+                    "<ffffI3I",
+                    pos.x, pos.y, sprite_comp.z,
+                    sprite_comp.scale,
+                    sprite_comp.atlas_index,
+                    0, 0, 0
+                ))
+            # Nahranie finálnych bajtov na GPU
+            self.queue.write_buffer(self.sprites_buffer, 0, sprite_bytes)
 
         command_encoder = self.device.create_command_encoder(label="Render Encoder")
 
@@ -367,7 +460,7 @@ class Renderer:
 
         # 2. Render Pass (do offscreen texture)
         render_pass = command_encoder.begin_render_pass(
-            label="Raycast Pass",
+            label="Raycast & Sprite Pass",
             color_attachments=[
                 {
                     "view": self.blit_resources.offscreen_texture,
@@ -378,12 +471,24 @@ class Renderer:
                 }
             ],
         )
+        # Vykreslenie 3D stien pomocou Raycastu
         render_pass.set_pipeline(self.render_pipelines[RenderPipelineType.Raycast])
         render_pass.set_bind_group(0, self.camera_resources.bind_group, [])
         render_pass.set_bind_group(1, self.map_resources.bind_group, [])
         render_pass.set_bind_group(2, self.atlas_resources.bind_group, [])
         render_pass.set_bind_group(3, self.ray_hits_bind_group, [])
         render_pass.draw(3, 1, 0, 0)
+
+        #Vykreslenie všetkých inštancií spritov v rovnakom render passe
+        if self.sprite_count > 0:
+            render_pass.set_pipeline(self.render_pipelines[RenderPipelineType.Sprite])
+            render_pass.set_bind_group(0, self.camera_resources.bind_group, [])
+            render_pass.set_bind_group(1, self.ray_hits_bind_group, [])
+            render_pass.set_bind_group(2, self.atlas_sprite_bind_group, [])
+            render_pass.set_bind_group(3, self.sprites_bind_group, [])
+            render_pass.set_bind_group(4, self.map_resources.bind_group, [])
+            render_pass.draw(6, self.sprite_count, 0, 0)
+
         render_pass.end()
         
         # 3. Blit Pass (kreslí na okno)
@@ -408,6 +513,4 @@ class Renderer:
         blit_pass.end()
 
         self.device.queue.submit([command_encoder.finish()])
-        
-        # Požadovať ďalší frame pre neustálu slučku
         self.canvas.request_draw(self.draw_frame)
