@@ -1,6 +1,6 @@
 import math
 from .ecs import World
-from .components import Position, Rotation, Velocity, PlayerController, InputState
+from .components import Position, Rotation, Velocity, PlayerController, InputState, Sprite
 
 TILE_SIZE = 64
 MAX_MAP_WIDTH = 8
@@ -87,3 +87,19 @@ class MovementSystem:
                 if map_index < len(map_walls) and map_walls[map_index] != 0:
                     return True
         return False
+
+class SpriteSystem:
+    @staticmethod
+    def update(world: World, cam_x: float, cam_y: float):
+        cam_x_map = cam_x / 64.0
+        cam_y_map = cam_y / 64.0
+        
+        sprite_entities = world.get_components(Position, Sprite)
+        
+        sprites_with_dist = []
+        for entity_id, (pos, sprite_comp) in sprite_entities:
+            dist_sq = (pos.x - cam_x_map)**2 + (pos.y - cam_y_map)**2
+            sprites_with_dist.append((dist_sq, pos, sprite_comp))
+        
+        sprites_with_dist.sort(key=lambda s: s[0], reverse=True)
+        return sprites_with_dist

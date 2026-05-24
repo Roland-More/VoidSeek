@@ -12,6 +12,7 @@ from core.backend.texture import new_offscreen_texture
 from core.backend.definitions import *
 from game.state import GameState
 from game.components import Position, Sprite  # Import ECS komponentov pre dopytovanie
+from game.systems import SpriteSystem
 
 class Renderer:
     def __init__(self, title="VoidSeek", width=800, height=600):
@@ -184,6 +185,8 @@ class Renderer:
 
         self.canvas.request_draw(self.draw_frame)
         self.canvas.add_event_handler(self.on_key_down, "key_down")
+        self.canvas.add_event_handler(self.on_key_up, "key_up")
+        self.canvas.add_event_handler(self.on_pointer_move, "pointer_move")
 
     def _build_bind_groups_layouts(self, device):
         layouts = {}
@@ -347,7 +350,7 @@ class Renderer:
         data = (ctypes.c_uint32 * 4)(width, height, tile_size, render_distance)
         self.queue.write_buffer(self.map_resources.settings_buffer, 0, data)
 
-    def on_key_down(self, event):
+    def _on_key_down(self, event):
         key = event.get("key").lower()
         if key == "escape":
             self.canvas.close()
@@ -355,6 +358,35 @@ class Renderer:
             self.toggle_fullscreen()
         elif key == "l":
             self.toggle_mouse_lock()
+        elif key == "w":
+            self.game_state.input.forward = True
+        elif key == "s":
+            self.game_state.input.backward = True
+        elif key == "a":
+            self.game_state.input.left = True
+        elif key == "d":
+            self.game_state.input.right = True
+
+    def _on_key_up(self, event):
+        key = event.get("key").lower()
+        if key == "w":
+            self.game_state.input.forward = False
+        elif key == "s":
+            self.game_state.input.backward = False
+        elif key == "a":
+            self.game_state.input.left = False
+        elif key == "d":
+            self.game_state.input.right = False
+
+    def _on_pointer_move(self, event):
+        if self._is_mouse_locked:
+            x = event.get("x")
+            if self._last_mouse_x is not None:
+                dx = x - self._last_mouse_x
+                self.game_state.input.mouse_dx += dx
+            self._last_mouse_x = x
+        else:
+            self._last_mouse_x = None
 
     def toggle_mouse_lock(self):
         if self._is_mouse_locked:
@@ -387,57 +419,14 @@ class Renderer:
             self._is_fullscreen = True
         self._last_mouse_x = None
 
-    def draw_frame(self):
-        current_time = time.perf_counter()
-        delta_time = current_time - self.last_time
-        self.last_time = current_time
-        
-        window = self.canvas._window
-        if window:
-            self.game_state.input.forward = glfw.get_key(window, glfw.KEY_W) == glfw.PRESS
-            self.game_state.input.backward = glfw.get_key(window, glfw.KEY_S) == glfw.PRESS
-            self.game_state.input.left = glfw.get_key(window, glfw.KEY_A) == glfw.PRESS
-            self.game_state.input.right = glfw.get_key(window, glfw.KEY_D) == glfw.PRESS
-
-            if self._is_mouse_locked:
-                x, _ = glfw.get_cursor_pos(window)
-                if self._last_mouse_x is not None:
-                    dx = x - self._last_mouse_x
-                    self.game_state.input.mouse_dx += dx
-                self._last_mouse_x = x
-            else:
-                self._last_mouse_x = None
-
-        self.game_state.update(delta_time)
-        
-        cam_x, cam_y, cam_angle = self.game_state.camera_pose()
-        self.update_camera(cam_x, cam_y, cam_angle)
-
-        # =====================================================================
-        # ECS DOSLEDNÉ SPRACOVANIE A TRIEDENIE SPRITOV (Painter's Algorithm)
-        # =====================================================================
-        cam_x_map = cam_x / 64.0  # Prepočet pozície hráča na mapové jednotky (TILE_SIZE=64)
-        cam_y_map = cam_y / 64.0
-
-        # Dopyt na všetky entity disponujúce komponentom Position a zároveň Sprite
-        sprite_entities = self.game_state.world.get_components(Position, Sprite)
-        
-        # Výpočet euklidovskej vzdialenosti k hráčovi na zoradenie
-        sprites_with_dist = []
-        for entity_id, (pos, sprite_comp) in sprite_entities:
-            dist_sq = (pos.x - cam_x_map)**2 + (pos.y - cam_y_map)**2
-            sprites_with_dist.append((dist_sq, pos, sprite_comp))
-        
-        # Zoradíme zostupne (najprv vzdialené, potom blízke)
-        sprites_with_dist.sort(key=lambda s: s[0], reverse=True)
-        
+    def update_sprites(self, cam_x, cam_y):
+        sprites_with_dist = SpriteSystem.update(self.game_state.world, cam_x, cam_y)
         self.sprite_count = min(len(sprites_with_dist), 4096)
         
         if self.sprite_count > 0:
             sprite_bytes = bytearray()
             for i in range(self.sprite_count):
                 _, pos, sprite_comp = sprites_with_dist[i]
-                # Binárna serializácia štruktúry zodpovedajúcej WGSL: position(3xf32), scale(f32), atlas_index(u32), padding(3xu32)
                 sprite_bytes.extend(struct.pack(
                     "<ffffI3I",
                     pos.x, pos.y, sprite_comp.z,
@@ -445,8 +434,19 @@ class Renderer:
                     sprite_comp.atlas_index,
                     0, 0, 0
                 ))
-            # Nahranie finálnych bajtov na GPU
             self.queue.write_buffer(self.sprites_buffer, 0, sprite_bytes)
+
+    def draw_frame(self):
+        current_time = time.perf_counter()
+        delta_time = current_time - self.last_time
+        self.last_time = current_time
+        
+        self.game_state.update(delta_time)
+        
+        cam_x, cam_y, cam_angle = self.game_state.camera_pose()
+        self.update_camera(cam_x, cam_y, cam_angle)
+
+        self.update_sprites(cam_x, cam_y)
 
         command_encoder = self.device.create_command_encoder(label="Render Encoder")
 
