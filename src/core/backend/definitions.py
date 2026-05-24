@@ -45,6 +45,11 @@ class AtlasResources:
         self.bind_group = bind_group
         self.texture_view = texture_view
 
+class AtlasSpriteResources:
+    def __init__(self, bind_group, texture_view):
+        self.bind_group = bind_group
+        self.texture_view = texture_view
+
 class BlitResources:
     def __init__(self, offscreen_texture, bind_group):
         self.offscreen_texture = offscreen_texture

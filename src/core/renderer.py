@@ -54,7 +54,7 @@ class Renderer:
         self.blit_resources = BlitResources(offscreen_view, blit_bind_group)
 
         # Atlas textúr pre prostredie (Steny, Podlahy, Stropy)
-        atlas_texture = self._create_atlas_texture(self.device, self.queue, wgpu.TextureFormat.rgba8unorm_srgb)
+        atlas_texture = self._create_atlas_texture(self.device, self.queue, wgpu.TextureFormat.rgba8unorm_srgb, ["Wall-Texture.png", "Floor-Texture.png", "Ceiling-Texture.png"])
         atlas_view = atlas_texture.create_view(
             label="Texture Array View",
             dimension=wgpu.TextureViewDimension.d2_array
@@ -98,7 +98,7 @@ class Renderer:
             min_filter=wgpu.FilterMode.nearest,
             mipmap_filter=wgpu.MipmapFilterMode.nearest,
         )
-        self.atlas_sprite_bind_group = self.device.create_bind_group(
+        atlas_sprite_bind_group = self.device.create_bind_group(
             label="Sprite Texture Array Bind Group",
             layout=self.bind_group_layouts[BindScope.AtlasTexture],
             entries=[
@@ -106,6 +106,7 @@ class Renderer:
                 {"binding": 1, "resource": atlas_sprite_sampler},
             ]
         )
+        self.atlas_sprite_resources = AtlasSpriteResources(atlas_sprite_bind_group, atlas_sprite_view)
 
         # Buffer pre Ray Hits (1D Z-Buffer pre orezávanie spritov za stenami)
         self.ray_hits_buffer = self.device.create_buffer(
@@ -306,9 +307,7 @@ class Renderer:
 
         return pipelines
 
-    def _create_atlas_texture(self, device, queue, format, textures_list=None):
-        if textures_list is None:
-            textures_list = ["Wall-Texture.png", "Floor-Texture.png", "Ceiling-Texture.png"]
+    def _create_atlas_texture(self, device, queue, format, textures_list):
         builder = AtlasBuilder(device, queue)
         builder.set_pixel_format(format)
         try:
@@ -402,7 +401,7 @@ class Renderer:
 
     def toggle_fullscreen(self):
         if self._is_fullscreen:
-            glfw.set_window_monitor(self.canvas._window, None, 100, 100, 800, 600, glfw.DONT_CARE)
+            glfw.set_window_monitor(self.canvas._window, None, 100, 100, self.size[0], self.size[1], glfw.DONT_CARE)
             self._is_fullscreen = False
         else:
             monitor = glfw.get_primary_monitor()
@@ -484,7 +483,7 @@ class Renderer:
             render_pass.set_pipeline(self.render_pipelines[RenderPipelineType.Sprite])
             render_pass.set_bind_group(0, self.camera_resources.bind_group, [])
             render_pass.set_bind_group(1, self.ray_hits_bind_group, [])
-            render_pass.set_bind_group(2, self.atlas_sprite_bind_group, [])
+            render_pass.set_bind_group(2, self.atlas_sprite_resources.bind_group, [])
             render_pass.set_bind_group(3, self.sprites_bind_group, [])
             render_pass.set_bind_group(4, self.map_resources.bind_group, [])
             render_pass.draw(6, self.sprite_count, 0, 0)
