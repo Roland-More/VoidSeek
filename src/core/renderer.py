@@ -11,7 +11,6 @@ from core.backend.atlas import Builder as AtlasBuilder
 from core.backend.texture import new_offscreen_texture
 from core.backend.definitions import *
 from game.state import GameState
-from game.components import Position, Sprite  # Import ECS komponentov pre dopytovanie
 from game.systems import SpriteSystem
 
 class Renderer:
