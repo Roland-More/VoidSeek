@@ -350,7 +350,7 @@ class Renderer:
         data = (ctypes.c_uint32 * 4)(width, height, tile_size, render_distance)
         self.queue.write_buffer(self.map_resources.settings_buffer, 0, data)
 
-    def _on_key_down(self, event):
+    def on_key_down(self, event):
         key = event.get("key").lower()
         if key == "escape":
             self.canvas.close()
@@ -367,7 +367,7 @@ class Renderer:
         elif key == "d":
             self.game_state.input.right = True
 
-    def _on_key_up(self, event):
+    def on_key_up(self, event):
         key = event.get("key").lower()
         if key == "w":
             self.game_state.input.forward = False
@@ -378,7 +378,7 @@ class Renderer:
         elif key == "d":
             self.game_state.input.right = False
 
-    def _on_pointer_move(self, event):
+    def on_pointer_move(self, event):
         if self._is_mouse_locked:
             x = event.get("x")
             if self._last_mouse_x is not None:
