@@ -132,7 +132,10 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let per_pixel_distance = in.sprite_distance * length(ray_dir);
 
     let render_dist = f32(map_settings.render_distance);
-    let intensity = clamp(1.0 - (per_pixel_distance / render_dist), 0.0, 1.0);
+
+    let dist_ratio = clamp(per_pixel_distance / render_dist, 0.0, 1.0);
+    let exponent = 2.0; 
+    let intensity = 1.0 - pow(dist_ratio, exponent);
 
     return vec4<f32>(color.rgb * intensity, color.a);
 }
