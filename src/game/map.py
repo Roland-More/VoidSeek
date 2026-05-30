@@ -36,7 +36,7 @@ class MapManager:
             valid, orientation = self.check_vent_placement(x, y)
             index = y * self.width + x
             if valid:
-                self.walls[index] = 4
+                self.walls[index] = 13
                 game_state.create_vent(x, y, True, orientation)
             else:
                 self.walls[index] = 1

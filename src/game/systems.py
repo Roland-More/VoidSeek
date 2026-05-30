@@ -88,12 +88,156 @@ class MovementSystem:
 class SpriteSystem:
     @staticmethod
     def update(world: World, cam_x: float, cam_y: float):
-        sprite_entities = world.get_components(Position, Sprite)
+        sprite_entities = world.get_components(Position, Rotation, Sprite)
         
         sprites_with_dist = []
-        for entity_id, (pos, sprite_comp) in sprite_entities:
+        for entity_id, (pos, rot, sprite_comp) in sprite_entities:
             dist_sq = (pos.x - cam_x)**2 + (pos.y - cam_y)**2
-            sprites_with_dist.append((dist_sq, pos, sprite_comp))
+            sprites_with_dist.append((dist_sq, pos, rot, sprite_comp))
         
         sprites_with_dist.sort(key=lambda s: s[0], reverse=True)
         return sprites_with_dist
+
+class AnimatorSystem:
+    @staticmethod
+    def update(world: World, delta_time: float, map_manager):
+        from .components import SpriteAnimator, Sprite, TextureAnimator, Position
+        from .definitions import PlaybackState, PlaybackMode
+        
+        # SpriteAnimator
+        for entity_id, (pos, animator, sprite) in world.get_components(Position, SpriteAnimator, Sprite):
+            if animator.playback_state != PlaybackState.PLAYING:
+                continue
+
+            animation = animator.animations.get(animator.current_animation)
+            if animation:
+                sprite.atlas_index_front = animation.frames_front[animator.current_frame]
+                sprite.atlas_index_back = animation.frames_back[animator.current_frame]
+
+                animator.timer += delta_time
+                if animator.timer >= animation.frame_duration:
+                    animator.timer -= animation.frame_duration
+                    next_frame = animator.current_frame + 1
+
+                    if next_frame >= len(animation.frames_front):
+                        if animation.playback_mode != PlaybackMode.LOOP:
+                            animator.playback_state = PlaybackState.STOPPED
+                            animator.current_frame = len(animation.frames_front) - 1
+                        else:
+                            animator.current_frame = 0
+                    else:
+                        animator.current_frame = next_frame
+
+        # TextureAnimator
+        for entity_id, (pos, animator) in world.get_components(Position, TextureAnimator):
+            if animator.playback_state != PlaybackState.PLAYING:
+                continue
+            
+            animation = animator.animations.get(animator.current_animation)
+            if animation:
+                map_manager.set_wall(int(pos.x), int(pos.y), animation.frames[animator.current_frame])
+
+                animator.timer += delta_time
+                if animator.timer >= animation.frame_duration:
+                    animator.timer -= animation.frame_duration
+                    next_frame = animator.current_frame + 1
+
+                    if next_frame >= len(animation.frames):
+                        if animation.playback_mode != PlaybackMode.LOOP:
+                            animator.playback_state = PlaybackState.STOPPED
+                            animator.current_frame = len(animation.frames) - 1
+                        else:
+                            animator.current_frame = 0
+                    else:
+                        animator.current_frame = next_frame
+
+class InteractSystem:
+    @staticmethod
+    def update(world: World, input_state: InputState, player_entity, map_walls: list[int]):
+        from .definitions import INTERACT_DISTANCE
+
+        if not input_state.interact or player_entity is None:
+            return
+        input_state.interact = False
+
+        pos = world.get_component(player_entity, Position)
+        rot = world.get_component(player_entity, Rotation)
+        if not pos or not rot:
+            return
+
+        player_x, player_y = pos.x, pos.y
+        dir_x = math.cos(rot.angle)
+        dir_y = math.sin(rot.angle)
+
+        map_x = int(math.floor(player_x))
+        map_y = int(math.floor(player_y))
+
+        delta_dist_x = abs(1.0 / dir_x) if dir_x != 0 else float('inf')
+        delta_dist_y = abs(1.0 / dir_y) if dir_y != 0 else float('inf')
+
+        if dir_x < 0.0:
+            step_x = -1
+            side_dist_x = (player_x - map_x) * delta_dist_x
+        else:
+            step_x = 1
+            side_dist_x = ((map_x + 1.0) - player_x) * delta_dist_x
+
+        if dir_y < 0.0:
+            step_y = -1
+            side_dist_y = (player_y - map_y) * delta_dist_y
+        else:
+            step_y = 1
+            side_dist_y = ((map_y + 1.0) - player_y) * delta_dist_y
+
+        hit_distance = 0.0
+        entity_hit = None
+
+        while hit_distance <= INTERACT_DISTANCE:
+            if side_dist_x < side_dist_y:
+                hit_distance = side_dist_x
+                side_dist_x += delta_dist_x
+                map_x += step_x
+            else:
+                hit_distance = side_dist_y
+                side_dist_y += delta_dist_y
+                map_y += step_y
+
+            if hit_distance > INTERACT_DISTANCE:
+                break
+
+            if 0 <= map_x < MAX_MAP_WIDTH and 0 <= map_y < MAX_MAP_HEIGHT:
+                map_index = map_y * MAX_MAP_WIDTH + map_x
+                tile = map_walls[map_index]
+                if tile != 0:
+                    entity_hit = InteractSystem.find_interactable_at_position(world, float(map_x), float(map_y))
+                    break
+
+        if entity_hit is not None:
+            interactible = world.get_component(entity_hit, Interactible)
+            if interactible and interactible.enabled and interactible.on_interact:
+                interactible.on_interact(world, player_entity, entity_hit)
+
+    @staticmethod
+    def find_interactable_at_position(world: World, x: float, y: float):
+        for entity_id, (pos, interact) in world.get_components(Position, Interactible):
+            if int(pos.x) == int(x) and int(pos.y) == int(y):
+                return entity_id
+        return None
+
+class VentSystem:
+    @staticmethod
+    def update(world: World, delta_time: float):
+        from .components import Vent, TextureAnimator
+        from .definitions import PlaybackState, VentAnim
+        
+        for entity_id, (vent, texture_animator) in world.get_components(Vent, TextureAnimator):
+            if vent.is_open:
+                continue
+            vent.timer += delta_time
+            if vent.timer >= vent.time_to_open:
+                vent.is_open = True
+                vent.timer = 0.0
+                texture_animator.current_animation = ("Vent", VentAnim.OPENING)
+                texture_animator.playback_state = PlaybackState.PLAYING
+                texture_animator.current_frame = 0
+                texture_animator.timer = 0.0

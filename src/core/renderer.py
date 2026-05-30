@@ -53,7 +53,11 @@ class Renderer:
         self.blit_resources = BlitResources(offscreen_view, blit_bind_group)
 
         # Atlas textúr pre prostredie (Steny, Podlahy, Stropy)
-        atlas_texture = self._create_atlas_texture(self.device, self.queue, wgpu.TextureFormat.rgba8unorm_srgb, ["Wall-Texture.png", "Floor-Texture.png", "Ceiling-Texture.png", "Wall-vent-open.png"])
+        atlas_texture = self._create_atlas_texture(self.device, self.queue, wgpu.TextureFormat.rgba8unorm_srgb, 
+            ["Wall-Texture.png", "Floor-Texture.png", "Ceiling-Texture.png", "Wall-vent-closed.png",
+             "Wall-vent-anim-1.png", "Wall-vent-anim-2.png", "Wall-vent-anim-3.png",
+             "Wall-vent-anim-4.png", "Wall-vent-anim-5.png", "Wall-vent-anim-6.png",
+             "Wall-vent-anim-7.png", "Wall-vent-anim-8.png", "Wall-vent-open.png"])
         atlas_view = atlas_texture.create_view(
             label="Texture Array View",
             dimension=wgpu.TextureViewDimension.d2_array
@@ -82,7 +86,7 @@ class Renderer:
         # =====================================================================
         atlas_sprite_texture = self._create_atlas_texture(
             self.device, self.queue, wgpu.TextureFormat.rgba8unorm_srgb, 
-            ["Sprite-bg.png", "Sprite-no-bg.png"]
+            ["Sprite-bg.png", "Sprite-no-bg.png", "Sprite-bg-back.png", "Sprite-no-bg-back.png"]
         )
         atlas_sprite_view = atlas_sprite_texture.create_view(
             label="Sprite Texture Array View",
@@ -426,19 +430,22 @@ class Renderer:
         self._last_mouse_x = None
 
     def update_sprites(self, cam_x, cam_y):
+        import math
         sprites_with_dist = SpriteSystem.update(self.game_state.world, cam_x, cam_y)
         self.sprite_count = min(len(sprites_with_dist), 4096)
         
         if self.sprite_count > 0:
             sprite_bytes = bytearray()
             for i in range(self.sprite_count):
-                _, pos, sprite_comp = sprites_with_dist[i]
+                _, pos, rot, sprite_comp = sprites_with_dist[i]
                 sprite_bytes.extend(struct.pack(
-                    "<ffffI3I",
+                    "<ffffIIff",
                     pos.x, pos.y, sprite_comp.z,
                     sprite_comp.scale,
-                    sprite_comp.atlas_index,
-                    0, 0, 0
+                    sprite_comp.atlas_index_front,
+                    sprite_comp.atlas_index_back,
+                    math.cos(rot.angle),
+                    math.sin(rot.angle)
                 ))
             self.queue.write_buffer(self.sprites_buffer, 0, sprite_bytes)
 
