@@ -53,7 +53,7 @@ class Renderer:
         self.blit_resources = BlitResources(offscreen_view, blit_bind_group)
 
         # Atlas textúr pre prostredie (Steny, Podlahy, Stropy)
-        atlas_texture = self._create_atlas_texture(self.device, self.queue, wgpu.TextureFormat.rgba8unorm_srgb, ["Wall-Texture.png", "Floor-Texture.png", "Ceiling-Texture.png"])
+        atlas_texture = self._create_atlas_texture(self.device, self.queue, wgpu.TextureFormat.rgba8unorm_srgb, ["Wall-Texture.png", "Floor-Texture.png", "Ceiling-Texture.png", "Wall-vent-open.png"])
         atlas_view = atlas_texture.create_view(
             label="Texture Array View",
             dimension=wgpu.TextureViewDimension.d2_array
@@ -344,6 +344,11 @@ class Renderer:
         c_map_data = (ctypes.c_uint32 * len(map_data))(*map_data)
         self.queue.write_buffer(self.map_resources.data_buffer, 0, c_map_data)
 
+    def update_map_tile(self, index: int, wall_id: int, floor_id: int, ceil_id: int):
+        offset = index * 16
+        tile_data = (ctypes.c_uint32 * 4)(wall_id, floor_id, ceil_id, 0)
+        self.queue.write_buffer(self.map_resources.data_buffer, offset, tile_data)
+
     def update_map_settings(self, width, height, tile_size, render_distance):
         data = (ctypes.c_uint32 * 4)(width, height, tile_size, render_distance)
         self.queue.write_buffer(self.map_resources.settings_buffer, 0, data)
@@ -364,6 +369,9 @@ class Renderer:
             self.game_state.input.left = True
         elif key == "d":
             self.game_state.input.right = True
+        elif key == "e":
+            self.game_state.input.interact = True
+            print("Interact key pressed")
 
     def on_key_up(self, event):
         key = event.get("key").lower()
@@ -440,6 +448,12 @@ class Renderer:
         self.last_time = current_time
         
         self.game_state.update(delta_time)
+        
+        # Odošle len zmenené dlaždice na GPU
+        if self.game_state.map_manager.dirty_tiles:
+            for index, x, y, wall, floor, ceil in self.game_state.map_manager.dirty_tiles:
+                self.update_map_tile(index, wall, floor, ceil)
+            self.game_state.map_manager.dirty_tiles.clear()
         
         cam_x, cam_y, cam_angle = self.game_state.camera_pose()
         self.update_camera(cam_x, cam_y, cam_angle)

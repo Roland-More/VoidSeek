@@ -53,7 +53,7 @@ fn cs_main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let camera_x = 2.0 * f32(x) / camera.resolution.x - 1.0; // Zisti kde sa nachádza x pixel v zornom poli (-1 až 1)
     let ray_dir = camera.direction + camera.plane * camera_x; // Zisti smer lúča pre tento pixel
 
-    let ray_pos = camera.position / f32(map_settings.tile_size); // Ziskame ray poziciu v mapových jednotkách (napr. ak je tile_size 64, a kamera je na pozícii (128, 128), ray_pos bude (2, 2))
+    let ray_pos = camera.position; // Ziskame ray poziciu v mapových jednotkách (napr. ak je tile_size 64, a kamera je na pozícii (128, 128), ray_pos bude (2, 2))
     var map_pos = vec2<i32>(floor(ray_pos)); // Ziskame aktuálnu mapovú pozíciu (napr. (2, 2))
 
     let delta_dist = vec2<f32>(

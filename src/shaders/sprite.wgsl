@@ -15,8 +15,9 @@ struct RayHit {
 struct SpriteInstance {
     position: vec3<f32>,
     scale: f32,
-    atlas_index: u32,
-    _padding: array<u32, 3>,
+    atlas_index_front: u32,
+    atlas_index_back: u32,
+    direction: vec2<f32>,
 }
 
 struct MapSettings {
@@ -49,7 +50,7 @@ fn vs_main(
     let sprite = sprites[instance_index];
     
     // Transformovať sprite pozíciu vzhľadom ku kamere (Kamera je v (0,0) a my počítame rozdiel)
-    let sprite_pos = sprite.position.xy - (camera.position / f32(map_settings.tile_size));
+    let sprite_pos = sprite.position.xy - camera.position;
     let sprite_z = sprite.position.z;
 
     // Transformácia do kamerového priestoru (Násobenie inverznou kamerovou maticou)
@@ -86,10 +87,17 @@ fn vs_main(
     let ndc_x = (pixel_x / camera.resolution.x) * 2.0 - 1.0;
     let ndc_y = 1.0 - (pixel_y / camera.resolution.y) * 2.0;
 
+    // Zistíme či sa kamera nachádza vpredu alebo vzadu voči spritu
+    // Použijeme dot product: vektor od spritu ku kamere dot smer spritu
+    let to_camera = normalize(-sprite_pos);
+    let is_back = dot(to_camera, sprite.direction) < 0.0;
+    
+    let a_index = select(f32(sprite.atlas_index_front), f32(sprite.atlas_index_back), is_back);
+
     var out: VertexOutput;
     out.position = vec4<f32>(ndc_x, ndc_y, 0.5, 1.0);
     out.uv = uv;
-    out.atlas_index = f32(sprite.atlas_index);
+    out.atlas_index = a_index;
     out.sprite_distance = transform_y;
     out.logical_x = pixel_x;
 

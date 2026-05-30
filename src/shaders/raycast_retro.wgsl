@@ -78,7 +78,7 @@ fn fs_main(in: VertexPayload) -> @location(0) vec4<f32> {
     let camera_x = 2.0 * f32(x) / camera.resolution.x - 1.0;
     
     let ray_dir  = camera.direction + camera.plane * camera_x;
-    let ray_pos  = camera.position / f32(map_settings.tile_size);
+    let ray_pos  = camera.position;
     let aspect_fix = 1.3333;
 
     // --- PRIDANÉ: Ukladanie výsledkov pre neskoršiu úpravu svetla ---

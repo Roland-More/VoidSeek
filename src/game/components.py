@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from .input import InputState
 
 @dataclass
 class Position:
@@ -25,3 +24,8 @@ class Sprite:
     z: float = 0.0
     scale: float = 1.0 
     atlas_index: int = 0
+
+@dataclass
+class Interactible:
+    enabled: bool = True
+    on_interact: callable = None # Referencia na funkciu/callback

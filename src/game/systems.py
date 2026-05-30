@@ -1,16 +1,17 @@
 import math
 from .ecs import World
-from .components import Position, Rotation, Velocity, PlayerController, InputState, Sprite
+from .components import Position, Rotation, Velocity, PlayerController, Sprite, Interactible
+from .input import InputState
 
 TILE_SIZE = 64
 MAX_MAP_WIDTH = 8
 MAX_MAP_HEIGHT = 8
-PLAYER_RADIUS = 10.0
+PLAYER_RADIUS = 0.15
 
 class PlayerInputSystem:
     @staticmethod
-    def update(world: World):
-        for entity_id, (rot, vel, ctrl, inp) in world.get_components(Rotation, Velocity, PlayerController, InputState):
+    def update(world: World, inp: InputState):
+        for entity_id, (rot, vel, ctrl) in world.get_components(Rotation, Velocity, PlayerController):
             # Rotácia
             if inp.mouse_dx != 0.0:
                 rot.angle += inp.mouse_dx * ctrl.sensitivity
@@ -26,8 +27,8 @@ class PlayerInputSystem:
 
 class MovementSystem:
     @staticmethod
-    def update(world: World, delta_time: float, map_walls: list[int]):
-        for entity_id, (pos, rot, vel, inp) in world.get_components(Position, Rotation, Velocity, InputState):
+    def update(world: World, delta_time: float, map_walls: list[int], inp: InputState):
+        for entity_id, (pos, rot, vel) in world.get_components(Position, Rotation, Velocity):
             move_x = 0.0
             move_y = 0.0
 
@@ -67,16 +68,12 @@ class MovementSystem:
 
     @staticmethod
     def is_wall(check_x: float, check_y: float, map_walls: list[int]) -> bool:
-        inverted_size = 1.0 / float(TILE_SIZE)
-        player_rad = PLAYER_RADIUS * inverted_size
+        player_rad = PLAYER_RADIUS
 
-        x_scaled = check_x * inverted_size
-        y_scaled = check_y * inverted_size
-
-        min_x = int(math.floor(x_scaled - player_rad))
-        max_x = int(math.floor(x_scaled + player_rad))
-        min_y = int(math.floor(y_scaled - player_rad))
-        max_y = int(math.floor(y_scaled + player_rad))
+        min_x = int(math.floor(check_x - player_rad))
+        max_x = int(math.floor(check_x + player_rad))
+        min_y = int(math.floor(check_y - player_rad))
+        max_y = int(math.floor(check_y + player_rad))
 
         for map_x in range(min_x, max_x + 1):
             for map_y in range(min_y, max_y + 1):
@@ -91,14 +88,11 @@ class MovementSystem:
 class SpriteSystem:
     @staticmethod
     def update(world: World, cam_x: float, cam_y: float):
-        cam_x_map = cam_x / 64.0
-        cam_y_map = cam_y / 64.0
-        
         sprite_entities = world.get_components(Position, Sprite)
         
         sprites_with_dist = []
         for entity_id, (pos, sprite_comp) in sprite_entities:
-            dist_sq = (pos.x - cam_x_map)**2 + (pos.y - cam_y_map)**2
+            dist_sq = (pos.x - cam_x)**2 + (pos.y - cam_y)**2
             sprites_with_dist.append((dist_sq, pos, sprite_comp))
         
         sprites_with_dist.sort(key=lambda s: s[0], reverse=True)
