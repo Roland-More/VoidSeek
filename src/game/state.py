@@ -7,9 +7,10 @@ from .map import MapManager
 from .definitions import VentOrientation, PlaybackState, PlaybackMode, VentAnim, VENT_OFFSET, PLAYER_RADIUS, TIME_TO_OPEN_VENT
 import math
 
-class GameScene(Scene):
-    def __init__(self, renderer):
+class GameplayScene(Scene):
+    def __init__(self, renderer, scene_manager):
         super().__init__(renderer)
+        self.scene_manager = scene_manager
         self.input = InputState()
         
         self.player_entity = self.world.create_entity()
@@ -145,7 +146,7 @@ class GameScene(Scene):
         
         self.renderer.update_text(self.world)
 
-        self.renderer.render(encoder, target_view)
+        self.renderer.render_gameplay_scene(encoder, target_view)
 
     def handle_key_down(self, key: str):
         if key == "w":

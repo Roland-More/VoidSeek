@@ -13,7 +13,8 @@ from core.backend.definitions import *
 from core.backend.font import FontAtlas
 from core.scene import SceneManager
 from game.components import TextEntity
-from game.state import GameScene
+from game.state import GameplayScene
+from game.menu import MenuScene
 from game.systems import SpriteSystem
 
 class Renderer:
@@ -230,11 +231,11 @@ class Renderer:
         self.text_resources = TextInstanceResources(text_bind_group, self.text_buffer)
         self.text_char_count = 0
 
-        # Register and start default game scene
-        game_scene = GameScene(self)
-        self.scene_manager.register("game", game_scene)
-        self.scene_manager.switch_to("game")
-        if self.scene_manager.current_scene:
+        # Register scenes
+        self.scene_manager.register("menu", MenuScene(self, self.scene_manager))
+        self.scene_manager.register("game", GameplayScene(self, self.scene_manager))
+        self.scene_manager.switch_to("menu")
+        if hasattr(self.scene_manager.current_scene, "start"):
             self.scene_manager.current_scene.start()
 
         self.canvas.request_draw(self.draw_frame)
@@ -567,7 +568,28 @@ class Renderer:
             
         self.canvas.request_draw(self.draw_frame)
 
-    def render(self, command_encoder, current_texture_view):
+    def render_menu_scene(self, command_encoder, current_texture_view):
+        blit_pass = command_encoder.begin_render_pass(
+            label="Menu Blit Pass",
+            color_attachments=[
+                {
+                    "view": current_texture_view,
+                    "resolve_target": None,
+                    "clear_value": (0.0, 0.0, 0.0, 1.0),
+                    "load_op": wgpu.LoadOp.clear,
+                    "store_op": wgpu.StoreOp.store,
+                }
+            ],
+        )
+        if self.text_char_count > 0:
+            blit_pass.set_pipeline(self.render_pipelines[RenderPipelineType.Text])
+            blit_pass.set_bind_group(0, self.camera_resources.bind_group, [])
+            blit_pass.set_bind_group(1, self.font_resources.bind_group, [])
+            blit_pass.set_bind_group(2, self.text_resources.bind_group, [])
+            blit_pass.draw(6, self.text_char_count, 0, 0)
+        blit_pass.end()
+
+    def render_gameplay_scene(self, command_encoder, current_texture_view):
         # 1. Compute Pass
         compute_pass = command_encoder.begin_compute_pass(label="Raycast Compute Pass")
         compute_pass.set_pipeline(self.compute_pipelines[ComputePipelineType.Raycast])
