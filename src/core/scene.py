@@ -31,3 +31,5 @@ class SceneManager:
 
     def switch_to(self, name: str):
         self.current_scene = self.scenes.get(name)
+        if self.current_scene and hasattr(self.current_scene, "on_enter"):
+            self.current_scene.on_enter()

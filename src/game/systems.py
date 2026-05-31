@@ -289,12 +289,10 @@ class UISystem:
                 
             world.add_component(entity_id, UISprite(color=btn.color_hover if btn.is_hovered else btn.color_normal, use_texture=False))
             
-            char_width = 32 * btn.font_size
             char_height = 64 * btn.font_size
-            text_width = len(btn.text) * char_width
-            text_x = pos.x + (pos.width - text_width) / 2
+            text_x = pos.x + pos.width / 2
             text_y = pos.y + (pos.height - char_height) / 2
-            world.add_component(entity_id, TextEntity(text=btn.text, x=text_x, y=text_y, size=btn.font_size, color=btn.text_color))
+            world.add_component(entity_id, TextEntity(text=btn.text, x=text_x, y=text_y, size=btn.font_size, color=btn.text_color, alignment="center"))
 
         # Spracovanie textových vstupov
         for entity_id, (pos, text_input) in world.get_components(UIPosition, UITextInput):
@@ -333,6 +331,11 @@ class UISystem:
                 display_color = text_input.text_color
                 
             world.add_component(entity_id, TextEntity(text=display_text, x=text_x, y=text_y, size=text_input.font_size, color=display_color))
+            
+        # Vizuálny ladiaci kurzor
+        cursor_id = 999999
+        world.add_component(cursor_id, UIPosition(x=mouse_x - 2, y=mouse_y - 2, width=4, height=4, z_index=999))
+        world.add_component(cursor_id, UISprite(color=(1.0, 0.0, 0.0, 1.0), use_texture=False))
 
 class UISpriteSystem:
     @staticmethod

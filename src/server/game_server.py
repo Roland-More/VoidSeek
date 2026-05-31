@@ -81,6 +81,7 @@ class GameServer:
                     message = json.dumps(payload).encode("utf-8")
                     try:
                         self.udp_socket.sendto(message, ("<broadcast>", self.udp_port))
+                        self.udp_socket.sendto(message, ("127.0.0.1", self.udp_port))
                     except Exception as e:
                         print(f"[UDP] Broadcast error: {e}")
                 time.sleep(5.0)

@@ -246,7 +246,12 @@ class Renderer:
         self.ui_element_count = 0
 
         # Register scenes
+        self.scene_manager.network_client = None
         self.scene_manager.register("menu", MenuScene(self, self.scene_manager))
+        from game.server_list import ServerListScene
+        self.scene_manager.register("server_list", ServerListScene(self, self.scene_manager))
+        from game.room import RoomScene
+        self.scene_manager.register("room", RoomScene(self, self.scene_manager))
         self.scene_manager.register("game", GameplayScene(self, self.scene_manager))
         self.scene_manager.switch_to("menu")
         if hasattr(self.scene_manager.current_scene, "start"):
@@ -508,10 +513,16 @@ class Renderer:
             self.scene_manager.current_scene.handle_key_up(key)
 
     def on_pointer_move(self, event):
-        w, h = glfw.get_window_size(self.canvas._window)
+        # Použijeme logické rozmery plátna, v ktorých chodia aj samotné pointer eventy
+        w, h = self.canvas.get_logical_size()
+        
+        evt_x = event.get("x")
+        evt_y = event.get("y")
+            
         if w > 0 and h > 0:
-            self.mouse_x = event.get("x") * (RENDER_WIDTH / w)
-            self.mouse_y = event.get("y") * (RENDER_HEIGHT / h)
+            self.mouse_x = evt_x * (RENDER_WIDTH / w)
+            self.mouse_y = evt_y * (RENDER_HEIGHT / h)
+
         
         if self._is_mouse_locked:
             x = event.get("x")
@@ -567,6 +578,14 @@ class Renderer:
         
         for entity_id, (text_comp,) in world.get_components(TextEntity):
             x_offset = text_comp.x
+            
+            if getattr(text_comp, "alignment", "left") == "center":
+                total_width = 0.0
+                for char in text_comp.text:
+                    if char in self.font_atlas.glyphs:
+                        total_width += self.font_atlas.glyphs[char]["advance"] * text_comp.size
+                x_offset -= total_width / 2.0
+                
             for char in text_comp.text:
                 if char not in self.font_atlas.glyphs:
                     continue

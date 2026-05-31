@@ -79,6 +79,7 @@ class TextEntity:
     size: float
     color: tuple[float, float, float, float]
     font_id: int = 0
+    alignment: str = "left"
 
 @dataclass
 class FPSCounter:

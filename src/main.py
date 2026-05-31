@@ -1,4 +1,13 @@
+import sys
 import ctypes
+
+try:
+    # Upozorníme Windows, že sme DPI aware, aby nám plátno neorezával/neškáloval
+    ctypes.windll.user32.SetProcessDPIAware()
+except Exception:
+    pass
+
+import wgpu
 from core.renderer import Renderer
 from rendercanvas.auto import loop
 
