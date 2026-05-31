@@ -275,6 +275,37 @@ class FPSSystem:
                 counter.frame_count = 0
                 text.text = f"FPS: {avg_fps}"
 
+class UISpriteSystem:
+    @staticmethod
+    def update(world: World) -> tuple[bytearray, int]:
+        from .components import UIPosition, UISprite
+        import struct
+        
+        ui_entities = world.get_components(UIPosition, UISprite)
+        ui_elements = [(ui_pos, ui_sprite) for _, (ui_pos, ui_sprite) in ui_entities]
+        ui_elements.sort(key=lambda item: item[0].z_index)
+        
+        sprite_bytes = bytearray()
+        count = len(ui_elements)
+        
+        for ui_pos, ui_sprite in ui_elements:
+            if not ui_sprite.use_texture:
+                uv_x, uv_y, uv_w, uv_h = 0.0, 0.0, 1.0, 1.0
+            else:
+                uv_x, uv_y, uv_w, uv_h = 0.0, 0.0, 1.0, 1.0 # UV pre textúru, prevezme sa neskôr z atlasu
+                
+            sprite_bytes.extend(struct.pack(
+                "<ffff ffff ffff I",
+                ui_pos.x, ui_pos.y,
+                ui_pos.width, ui_pos.height,
+                ui_sprite.color[0], ui_sprite.color[1],
+                ui_sprite.color[2], ui_sprite.color[3],
+                uv_x, uv_y, uv_w, uv_h,
+                1 if ui_sprite.use_texture else 0
+            ))
+            
+        return sprite_bytes, count
+
 # =============================================================================
 # Numba warmup – kompilácia prebehne pri importe modulu, nie počas hrania
 # =============================================================================

@@ -85,3 +85,17 @@ class FPSCounter:
     timer: float = 0.0
     frame_count: int = 0
     time_to_update: float = 0.25
+
+@dataclass
+class UIPosition:
+    x: float
+    y: float
+    width: float
+    height: float
+    z_index: int = 0
+
+@dataclass
+class UISprite:
+    color: tuple[float, float, float, float] = (1.0, 1.0, 1.0, 1.0)
+    texture_id: int = -1
+    use_texture: bool = False

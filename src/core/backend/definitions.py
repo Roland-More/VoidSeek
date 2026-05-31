@@ -21,12 +21,14 @@ class BindScope(Enum):
     SpriteInstances = auto()
     FontAtlas = auto()
     TextInstances = auto()
+    UIInstances = auto()
 
 class RenderPipelineType(Enum):
     Raycast = auto()
     Blit = auto()
     Sprite = auto()
     Text = auto()
+    UI = auto()
 
 class ComputePipelineType(Enum):
     Raycast = auto()
@@ -67,3 +69,7 @@ class TextInstanceResources:
         self.bind_group = bind_group
         self.buffer = buffer
 
+class UIInstanceResources:
+    def __init__(self, bind_group, buffer):
+        self.bind_group = bind_group
+        self.buffer = buffer

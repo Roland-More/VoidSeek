@@ -231,6 +231,21 @@ class Renderer:
         self.text_resources = TextInstanceResources(text_bind_group, self.text_buffer)
         self.text_char_count = 0
 
+        # Buffer pre UI Inštancie
+        self.ui_max_elements = 256
+        self.ui_buffer = self.device.create_buffer(
+            label="UI Instances Buffer",
+            size=self.ui_max_elements * 52,
+            usage=wgpu.BufferUsage.STORAGE | wgpu.BufferUsage.COPY_DST
+        )
+        ui_bind_group = self.device.create_bind_group(
+            label="UI Instances Bind Group",
+            layout=self.bind_group_layouts[BindScope.UIInstances],
+            entries=[{"binding": 0, "resource": {"buffer": self.ui_buffer, "offset": 0, "size": self.ui_buffer.size}}]
+        )
+        self.ui_resources = UIInstanceResources(ui_bind_group, self.ui_buffer)
+        self.ui_element_count = 0
+
         # Register scenes
         self.scene_manager.register("menu", MenuScene(self, self.scene_manager))
         self.scene_manager.register("game", GameplayScene(self, self.scene_manager))
@@ -328,6 +343,14 @@ class Renderer:
         builder = BindGroupLayoutBuilder(device)
         builder.add_entry({
             "binding": 0,
+            "visibility": wgpu.ShaderStage.VERTEX,
+            "buffer": {"type": wgpu.BufferBindingType.read_only_storage}
+        })
+        layouts[BindScope.UIInstances] = builder.build("UI Instances Layout")
+
+        builder = BindGroupLayoutBuilder(device)
+        builder.add_entry({
+            "binding": 0,
             "visibility": wgpu.ShaderStage.COMPUTE,
             "buffer": {"type": wgpu.BufferBindingType.uniform}
         })
@@ -390,6 +413,16 @@ class Renderer:
         text_builder.add_bind_group_layout(layouts[BindScope.FontAtlas])
         text_builder.add_bind_group_layout(layouts[BindScope.TextInstances])
         pipelines[RenderPipelineType.Text] = text_builder.build("Text Pipeline")
+
+        # UI
+        ui_builder = RenderPipelineBuilder(device)
+        ui_builder.set_shader_module("ui.wgsl", "vs_main", "fs_main")
+        ui_builder.set_pixel_format(surface_format)
+        ui_builder.enable_alpha_blend()
+        ui_builder.add_bind_group_layout(layouts[BindScope.Camera])
+        ui_builder.add_bind_group_layout(layouts[BindScope.FontAtlas])
+        ui_builder.add_bind_group_layout(layouts[BindScope.UIInstances])
+        pipelines[RenderPipelineType.UI] = ui_builder.build("UI Pipeline")
 
         return pipelines
 
@@ -550,6 +583,24 @@ class Renderer:
                 ))
             self.queue.write_buffer(self.sprites_buffer, 0, sprite_bytes)
 
+    def update_ui_buffers(self, world):
+        from game.systems import UISpriteSystem
+        sprite_bytes, count = UISpriteSystem.update(world)
+        self.ui_element_count = min(count, self.ui_max_elements)
+        
+        if self.ui_element_count > 0:
+            self.queue.write_buffer(self.ui_buffer, 0, sprite_bytes[:self.ui_element_count * 52])
+
+    def render_ui(self, render_pass):
+        if self.ui_element_count == 0:
+            return
+            
+        render_pass.set_pipeline(self.render_pipelines[RenderPipelineType.UI])
+        render_pass.set_bind_group(0, self.camera_resources.bind_group, [])
+        render_pass.set_bind_group(1, self.font_resources.bind_group, [])
+        render_pass.set_bind_group(2, self.ui_resources.bind_group, [])
+        render_pass.draw(6, self.ui_element_count, 0, 0)
+
     def draw_frame(self):
         current_time = time.perf_counter()
         delta_time = current_time - self.last_time
@@ -587,6 +638,8 @@ class Renderer:
             blit_pass.set_bind_group(1, self.font_resources.bind_group, [])
             blit_pass.set_bind_group(2, self.text_resources.bind_group, [])
             blit_pass.draw(6, self.text_char_count, 0, 0)
+            
+        self.render_ui(blit_pass)
         blit_pass.end()
 
     def render_gameplay_scene(self, command_encoder, current_texture_view):
@@ -656,4 +709,5 @@ class Renderer:
             blit_pass.set_bind_group(2, self.text_resources.bind_group, [])
             blit_pass.draw(6, self.text_char_count, 0, 0)
 
+        self.render_ui(blit_pass)
         blit_pass.end()

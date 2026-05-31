@@ -145,7 +145,7 @@ class GameplayScene(Scene):
         self.renderer.update_sprites(self.world, cam_x, cam_y)
         
         self.renderer.update_text(self.world)
-
+        self.renderer.update_ui_buffers(self.world)
         self.renderer.render_gameplay_scene(encoder, target_view)
 
     def handle_key_down(self, key: str):
