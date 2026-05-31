@@ -5,7 +5,6 @@ T = TypeVar('T')
 class World:
     def __init__(self):
         self._next_entity_id = 0
-        # Mapa: component_class -> {entity_id: component_instance}
         self._components: dict[Type, dict[int, Any]] = {}
 
     def create_entity(self) -> int:
@@ -23,11 +22,9 @@ class World:
         return self._components.get(comp_type, {}).get(entity)
 
     def get_components(self, *comp_types: Type) -> list[tuple[int, list[Any]]]:
-        """Vráti list: [ (entity_id, [comp1, comp2, ...]), ... ]"""
         if not comp_types:
             return []
         
-        # Zoberieme entity, ktoré majú prvý komponent
         base_entities = set(self._components.get(comp_types[0], {}).keys())
         for comp_type in comp_types[1:]:
             base_entities &= set(self._components.get(comp_type, {}).keys())

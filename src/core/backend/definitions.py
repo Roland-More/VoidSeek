@@ -3,7 +3,6 @@ import array
 import ctypes
 from enum import Enum, auto
 
-# Konštanty z pôvodného Rust projektu
 MAX_MAP_WIDTH = 8
 MAX_MAP_HEIGHT = 8
 MAX_MAP_TILES = 64
@@ -20,11 +19,14 @@ class BindScope(Enum):
     RayHits = auto()
     ComputeRayHits = auto()
     SpriteInstances = auto()
+    FontAtlas = auto()
+    TextInstances = auto()
 
 class RenderPipelineType(Enum):
     Raycast = auto()
     Blit = auto()
     Sprite = auto()
+    Text = auto()
 
 class ComputePipelineType(Enum):
     Raycast = auto()
@@ -54,3 +56,14 @@ class BlitResources:
     def __init__(self, offscreen_texture, bind_group):
         self.offscreen_texture = offscreen_texture
         self.bind_group = bind_group
+
+class FontResources:
+    def __init__(self, bind_group, texture_view):
+        self.bind_group = bind_group
+        self.texture_view = texture_view
+
+class TextInstanceResources:
+    def __init__(self, bind_group, buffer):
+        self.bind_group = bind_group
+        self.buffer = buffer
+

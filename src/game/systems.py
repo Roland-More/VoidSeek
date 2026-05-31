@@ -1,4 +1,6 @@
 import math
+import numpy as np
+from numba import njit
 from .ecs import World
 from .components import Position, Rotation, Velocity, PlayerController, Sprite, Interactible
 from .input import InputState
@@ -7,6 +9,77 @@ TILE_SIZE = 64
 MAX_MAP_WIDTH = 8
 MAX_MAP_HEIGHT = 8
 PLAYER_RADIUS = 0.15
+
+# =============================================================================
+# Numba-optimalizované matematické funkcie
+# =============================================================================
+
+@njit(cache=True)
+def _is_wall(check_x: float, check_y: float, map_walls, max_w: int, max_h: int, player_rad: float) -> bool:
+    min_x = int(math.floor(check_x - player_rad))
+    max_x = int(math.floor(check_x + player_rad))
+    min_y = int(math.floor(check_y - player_rad))
+    max_y = int(math.floor(check_y + player_rad))
+
+    for map_x in range(min_x, max_x + 1):
+        for map_y in range(min_y, max_y + 1):
+            if map_x < 0 or map_x >= max_w or map_y < 0 or map_y >= max_h:
+                return True
+            map_index = map_y * max_w + map_x
+            if map_index < len(map_walls) and map_walls[map_index] != 0:
+                return True
+    return False
+
+@njit(cache=True)
+def _dda_raycast(player_x: float, player_y: float, dir_x: float, dir_y: float, 
+                 map_walls, max_w: int, max_h: int, max_dist: float):
+    map_x = int(math.floor(player_x))
+    map_y = int(math.floor(player_y))
+
+    if dir_x != 0.0:
+        delta_dist_x = abs(1.0 / dir_x)
+    else:
+        delta_dist_x = 1e30
+    if dir_y != 0.0:
+        delta_dist_y = abs(1.0 / dir_y)
+    else:
+        delta_dist_y = 1e30
+
+    if dir_x < 0.0:
+        step_x = -1
+        side_dist_x = (player_x - map_x) * delta_dist_x
+    else:
+        step_x = 1
+        side_dist_x = ((map_x + 1.0) - player_x) * delta_dist_x
+
+    if dir_y < 0.0:
+        step_y = -1
+        side_dist_y = (player_y - map_y) * delta_dist_y
+    else:
+        step_y = 1
+        side_dist_y = ((map_y + 1.0) - player_y) * delta_dist_y
+
+    hit_distance = 0.0
+
+    while hit_distance <= max_dist:
+        if side_dist_x < side_dist_y:
+            hit_distance = side_dist_x
+            side_dist_x += delta_dist_x
+            map_x += step_x
+        else:
+            hit_distance = side_dist_y
+            side_dist_y += delta_dist_y
+            map_y += step_y
+
+        if hit_distance > max_dist:
+            break
+
+        if 0 <= map_x < max_w and 0 <= map_y < max_h:
+            map_index = map_y * max_w + map_x
+            if map_walls[map_index] != 0:
+                return map_x, map_y, hit_distance
+
+    return -1, -1, max_dist
 
 class PlayerInputSystem:
     @staticmethod
@@ -28,6 +101,7 @@ class PlayerInputSystem:
 class MovementSystem:
     @staticmethod
     def update(world: World, delta_time: float, map_walls: list[int], inp: InputState):
+        walls_arr = np.array(map_walls, dtype=np.int32)
         for entity_id, (pos, rot, vel) in world.get_components(Position, Rotation, Velocity):
             move_x = 0.0
             move_y = 0.0
@@ -57,33 +131,11 @@ class MovementSystem:
                 move_x = (move_x / magnitude) * vel.speed * delta_time
                 move_y = (move_y / magnitude) * vel.speed * delta_time
 
-                if not MovementSystem.is_wall(pos.x + move_x, pos.y, map_walls):
+                if not _is_wall(pos.x + move_x, pos.y, walls_arr, MAX_MAP_WIDTH, MAX_MAP_HEIGHT, PLAYER_RADIUS):
                     pos.x += move_x
                 
-                if not MovementSystem.is_wall(pos.x, pos.y + move_y, map_walls):
+                if not _is_wall(pos.x, pos.y + move_y, walls_arr, MAX_MAP_WIDTH, MAX_MAP_HEIGHT, PLAYER_RADIUS):
                     pos.y += move_y
-                    
-            # Vypísanie do konzoly
-            # print(f"Player position: ({pos.x:.2f}, {pos.y:.2f}), angle: {math.degrees(rot.angle):.2f}°")
-
-    @staticmethod
-    def is_wall(check_x: float, check_y: float, map_walls: list[int]) -> bool:
-        player_rad = PLAYER_RADIUS
-
-        min_x = int(math.floor(check_x - player_rad))
-        max_x = int(math.floor(check_x + player_rad))
-        min_y = int(math.floor(check_y - player_rad))
-        max_y = int(math.floor(check_y + player_rad))
-
-        for map_x in range(min_x, max_x + 1):
-            for map_y in range(min_y, max_y + 1):
-                if map_x < 0 or map_x >= MAX_MAP_WIDTH or map_y < 0 or map_y >= MAX_MAP_HEIGHT:
-                    return True
-                
-                map_index = map_y * MAX_MAP_WIDTH + map_x
-                if map_index < len(map_walls) and map_walls[map_index] != 0:
-                    return True
-        return False
 
 class SpriteSystem:
     @staticmethod
@@ -169,48 +221,15 @@ class InteractSystem:
         dir_x = math.cos(rot.angle)
         dir_y = math.sin(rot.angle)
 
-        map_x = int(math.floor(player_x))
-        map_y = int(math.floor(player_y))
+        walls_arr = np.array(map_walls, dtype=np.int32)
+        hit_mx, hit_my, hit_dist = _dda_raycast(
+            player_x, player_y, dir_x, dir_y,
+            walls_arr, MAX_MAP_WIDTH, MAX_MAP_HEIGHT, INTERACT_DISTANCE
+        )
 
-        delta_dist_x = abs(1.0 / dir_x) if dir_x != 0 else float('inf')
-        delta_dist_y = abs(1.0 / dir_y) if dir_y != 0 else float('inf')
-
-        if dir_x < 0.0:
-            step_x = -1
-            side_dist_x = (player_x - map_x) * delta_dist_x
-        else:
-            step_x = 1
-            side_dist_x = ((map_x + 1.0) - player_x) * delta_dist_x
-
-        if dir_y < 0.0:
-            step_y = -1
-            side_dist_y = (player_y - map_y) * delta_dist_y
-        else:
-            step_y = 1
-            side_dist_y = ((map_y + 1.0) - player_y) * delta_dist_y
-
-        hit_distance = 0.0
         entity_hit = None
-
-        while hit_distance <= INTERACT_DISTANCE:
-            if side_dist_x < side_dist_y:
-                hit_distance = side_dist_x
-                side_dist_x += delta_dist_x
-                map_x += step_x
-            else:
-                hit_distance = side_dist_y
-                side_dist_y += delta_dist_y
-                map_y += step_y
-
-            if hit_distance > INTERACT_DISTANCE:
-                break
-
-            if 0 <= map_x < MAX_MAP_WIDTH and 0 <= map_y < MAX_MAP_HEIGHT:
-                map_index = map_y * MAX_MAP_WIDTH + map_x
-                tile = map_walls[map_index]
-                if tile != 0:
-                    entity_hit = InteractSystem.find_interactable_at_position(world, float(map_x), float(map_y))
-                    break
+        if hit_mx >= 0 and hit_my >= 0:
+            entity_hit = InteractSystem.find_interactable_at_position(world, float(hit_mx), float(hit_my))
 
         if entity_hit is not None:
             interactible = world.get_component(entity_hit, Interactible)
@@ -241,3 +260,24 @@ class VentSystem:
                 texture_animator.playback_state = PlaybackState.PLAYING
                 texture_animator.current_frame = 0
                 texture_animator.timer = 0.0
+
+class FPSSystem:
+    @staticmethod
+    def update(world: World, delta_time: float):
+        from .components import FPSCounter, TextEntity
+        
+        for entity_id, (counter, text) in world.get_components(FPSCounter, TextEntity):
+            counter.timer += delta_time
+            counter.frame_count += 1
+            if counter.timer >= counter.time_to_update:
+                avg_fps = int(counter.frame_count / counter.timer)
+                counter.timer = 0.0
+                counter.frame_count = 0
+                text.text = f"FPS: {avg_fps}"
+
+# =============================================================================
+# Numba warmup – kompilácia prebehne pri importe modulu, nie počas hrania
+# =============================================================================
+_warmup_walls = np.zeros(64, dtype=np.int32)
+_is_wall(1.5, 1.5, _warmup_walls, 8, 8, 0.15)
+_dda_raycast(1.5, 1.5, 1.0, 0.0, _warmup_walls, 8, 8, 2.0)

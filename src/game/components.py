@@ -70,3 +70,18 @@ class Vent:
     time_to_open: float
     orientation: 'VentOrientation'
     destinations: tuple['Position', 'Position']
+
+@dataclass
+class TextEntity:
+    text: str
+    x: float
+    y: float
+    size: float
+    color: tuple[float, float, float, float]
+    font_id: int = 0
+
+@dataclass
+class FPSCounter:
+    timer: float = 0.0
+    frame_count: int = 0
+    time_to_update: float = 0.25

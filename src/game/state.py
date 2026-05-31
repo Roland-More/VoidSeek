@@ -1,7 +1,7 @@
 from .input import InputState
 from .ecs import World
 from .components import Position, Rotation, Velocity, PlayerController, Sprite, Interactible, Vent, TextureAnimator, TextureAnimation
-from .systems import PlayerInputSystem, MovementSystem, AnimatorSystem, InteractSystem, VentSystem
+from .systems import PlayerInputSystem, MovementSystem, AnimatorSystem, InteractSystem, VentSystem, FPSSystem
 from .map import MapManager
 from .definitions import VentOrientation, PlaybackState, PlaybackMode, VentAnim, VENT_OFFSET, PLAYER_RADIUS, TIME_TO_OPEN_VENT
 import math
@@ -9,21 +9,18 @@ import math
 class GameState:
     def __init__(self):
         self.world = World()
-        self.input = InputState()  # Stály odkaz na globálny vstup kvôli renderer.py
+        self.input = InputState()
         
-        # Oživenie ENTITY cez ECS namiesto zviazanej triedy "Player"
         self.player_entity = self.world.create_entity()
         self.world.add_component(self.player_entity, Position(x=1.5, y=1.5))
         self.world.add_component(self.player_entity, Rotation(angle=0.0))
         self.world.add_component(self.player_entity, Velocity(speed=1.95))
         self.world.add_component(self.player_entity, PlayerController())
 
-        # Príklad vytvorenia spritu v state.py
-        self.barrel_entity = self.world.create_entity()
-        # Súradnice spritu posielame v mapových jednotkách (napr. stred políčka 1.5, 6.5)
-        self.world.add_component(self.barrel_entity, Position(x=1.5, y=6.5))
-        self.world.add_component(self.barrel_entity, Rotation(angle=0.0))
-        self.world.add_component(self.barrel_entity, Sprite(z=0.0, scale=1.0, is_visible=True, atlas_index_front=1, atlas_index_back=3))
+        self.sprite_entity = self.world.create_entity()
+        self.world.add_component(self.sprite_entity, Position(x=1.5, y=6.5))
+        self.world.add_component(self.sprite_entity, Rotation(angle=0.0))
+        self.world.add_component(self.sprite_entity, Sprite(z=0.0, scale=1.0, is_visible=True, atlas_index_front=1, atlas_index_back=3))
 
         self.map_manager = MapManager()
         layout = [
@@ -122,6 +119,7 @@ class GameState:
         AnimatorSystem.update(self.world, delta_time, self.map_manager)
         InteractSystem.update(self.world, self.input, self.player_entity, self.map_manager.walls)
         VentSystem.update(self.world, delta_time)
+        FPSSystem.update(self.world, delta_time)
 
     def camera_pose(self) -> tuple[float, float, float]:
         pos = self.world.get_component(self.player_entity, Position)

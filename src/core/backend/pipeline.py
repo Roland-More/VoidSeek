@@ -9,6 +9,18 @@ class Builder:
         self.fragment_entry = ""
         self.pixel_format = wgpu.TextureFormat.rgba8unorm_srgb
         self.bind_group_layouts = []
+        self.blend_state = {
+            "color": {
+                "src_factor": wgpu.BlendFactor.one,
+                "dst_factor": wgpu.BlendFactor.zero,
+                "operation": wgpu.BlendOperation.add,
+            },
+            "alpha": {
+                "src_factor": wgpu.BlendFactor.one,
+                "dst_factor": wgpu.BlendFactor.zero,
+                "operation": wgpu.BlendOperation.add,
+            }
+        }
 
     def reset(self):
         self.bind_group_layouts.clear()
@@ -23,6 +35,20 @@ class Builder:
 
     def set_pixel_format(self, pixel_format: wgpu.TextureFormat):
         self.pixel_format = pixel_format
+
+    def enable_alpha_blend(self):
+        self.blend_state = {
+            "color": {
+                "src_factor": wgpu.BlendFactor.src_alpha,
+                "dst_factor": wgpu.BlendFactor.one_minus_src_alpha,
+                "operation": wgpu.BlendOperation.add,
+            },
+            "alpha": {
+                "src_factor": wgpu.BlendFactor.one,
+                "dst_factor": wgpu.BlendFactor.one_minus_src_alpha,
+                "operation": wgpu.BlendOperation.add,
+            }
+        }
 
     def build(self, label: str) -> wgpu.GPURenderPipeline:
         filepath = os.path.join(os.getcwd(), "src", "shaders", self.shader_filename)
@@ -58,18 +84,7 @@ class Builder:
                 "targets": [
                     {
                         "format": self.pixel_format,
-                        "blend": {
-                            "color": {
-                                "src_factor": wgpu.BlendFactor.one,
-                                "dst_factor": wgpu.BlendFactor.zero,
-                                "operation": wgpu.BlendOperation.add,
-                            },
-                            "alpha": {
-                                "src_factor": wgpu.BlendFactor.one,
-                                "dst_factor": wgpu.BlendFactor.zero,
-                                "operation": wgpu.BlendOperation.add,
-                            }
-                        },
+                        "blend": self.blend_state,
                         "write_mask": wgpu.ColorWrite.ALL,
                     }
                 ]

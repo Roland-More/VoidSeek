@@ -11,6 +11,7 @@ class MapManager:
         self.ceilings = [0] * (self.width * self.height)
         
         self.dirty_tiles = []
+        self.map_changed_flag = False
         
     def load_from_layout(self, layout: list[str], game_state):
         vents_to_place = []
@@ -22,7 +23,6 @@ class MapManager:
                 
                 index = y * self.width + x
                 
-                # Základné podlahy a stropy
                 self.floors[index] = 2
                 self.ceilings[index] = 3
                 self.walls[index] = 0
@@ -81,15 +81,13 @@ class MapManager:
             self.dirty_tiles.append((index, x, y, self.walls[index], self.floors[index], self.ceilings[index]))
             
     def mark_all_dirty(self):
-        """Označí celú mapu za zmenenú, pre prvý načítavací krok."""
-        pass
+        self.map_changed_flag = True
 
     def get_map_data(self) -> list[int]:
-        """Vráti 1D pole celej mapy pre GPU (4 inty na tile: wall, floor, ceil, padding)"""
         map_data = []
         for i in range(self.width * self.height):
             map_data.append(self.walls[i])
             map_data.append(self.floors[i])
             map_data.append(self.ceilings[i])
-            map_data.append(0) # padding
+            map_data.append(0)
         return map_data

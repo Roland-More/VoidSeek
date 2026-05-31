@@ -1,7 +1,6 @@
 from enum import Enum
 from typing import Callable
 
-# Constants
 VENT_OFFSET = 0.15
 PLAYER_RADIUS = 0.15
 INTERACT_DISTANCE = 1.5

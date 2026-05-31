@@ -2,7 +2,7 @@ import glfw
 import wgpu
 import time
 import ctypes
-import struct  # Potrebné pre serializáciu dát spritov do buffra
+import struct
 from rendercanvas.auto import RenderCanvas
 from core.backend.pipeline import Builder as RenderPipelineBuilder
 from core.backend.compute_pipeline import Builder as ComputePipelineBuilder
@@ -10,6 +10,8 @@ from core.backend.bind_group_layout import Builder as BindGroupLayoutBuilder
 from core.backend.atlas import Builder as AtlasBuilder
 from core.backend.texture import new_offscreen_texture
 from core.backend.definitions import *
+from core.backend.font import FontAtlas
+from game.components import TextEntity, FPSCounter
 from game.state import GameState
 from game.systems import SpriteSystem
 
@@ -24,7 +26,7 @@ class Renderer:
         self.last_time = time.perf_counter()
 
         self.size = (width, height)
-        self.canvas = RenderCanvas(title=title, size=(width, height))
+        self.canvas = RenderCanvas(title=title, size=(width, height), max_fps=120)
         self.toggle_mouse_lock()
         self.toggle_fullscreen()
 
@@ -32,7 +34,10 @@ class Renderer:
         self.queue = self.device.queue
         self.present_context = self.canvas.get_wgpu_context()
         self.render_texture_format = self.present_context.get_preferred_format(self.device.adapter)
-        self.present_context.configure(device=self.device, format=self.render_texture_format)
+        self.present_context.configure(
+            device=self.device, 
+            format=self.render_texture_format
+        )
         
         offscreen_format = wgpu.TextureFormat.rgba8unorm
         
@@ -52,7 +57,7 @@ class Renderer:
         )
         self.blit_resources = BlitResources(offscreen_view, blit_bind_group)
 
-        # Atlas textúr pre prostredie (Steny, Podlahy, Stropy)
+        # Atlas textúr pre prostredie
         atlas_texture = self._create_atlas_texture(self.device, self.queue, wgpu.TextureFormat.rgba8unorm_srgb, 
             ["Wall-Texture.png", "Floor-Texture.png", "Ceiling-Texture.png", "Wall-vent-closed.png",
              "Wall-vent-anim-1.png", "Wall-vent-anim-2.png", "Wall-vent-anim-3.png",
@@ -185,6 +190,47 @@ class Renderer:
             ]
         )
 
+        # =====================================================================
+        # Text Renderer Init
+        # =====================================================================
+        self.font_atlas = FontAtlas(self.device, "src/fonts/Jersey10-Regular.ttf", font_size=64)
+        font_sampler = self.device.create_sampler(
+            label="Font Sampler",
+            address_mode_u=wgpu.AddressMode.clamp_to_edge,
+            address_mode_v=wgpu.AddressMode.clamp_to_edge,
+            address_mode_w=wgpu.AddressMode.clamp_to_edge,
+            mag_filter=wgpu.FilterMode.linear,
+            min_filter=wgpu.FilterMode.linear,
+            mipmap_filter=wgpu.MipmapFilterMode.linear,
+        )
+        font_bind_group = self.device.create_bind_group(
+            label="Font Bind Group",
+            layout=self.bind_group_layouts[BindScope.FontAtlas],
+            entries=[
+                {"binding": 0, "resource": self.font_atlas.texture_view},
+                {"binding": 1, "resource": font_sampler},
+            ]
+        )
+        self.font_resources = FontResources(font_bind_group, self.font_atlas.texture_view)
+
+        self.text_max_chars = 2048
+        self.text_buffer = self.device.create_buffer(
+            label="Text Instances Buffer",
+            size=self.text_max_chars * 48,
+            usage=wgpu.BufferUsage.STORAGE | wgpu.BufferUsage.COPY_DST
+        )
+        text_bind_group = self.device.create_bind_group(
+            label="Text Instances Bind Group",
+            layout=self.bind_group_layouts[BindScope.TextInstances],
+            entries=[{"binding": 0, "resource": {"buffer": self.text_buffer, "offset": 0, "size": self.text_buffer.size}}]
+        )
+        self.text_resources = TextInstanceResources(text_bind_group, self.text_buffer)
+        self.text_char_count = 0
+
+        self.fps_entity = self.game_state.world.create_entity()
+        self.game_state.world.add_component(self.fps_entity, TextEntity("FPS: 0", 1.0, 1.0, 0.1, (0.0, 1.0, 0.0, 1.0)))
+        self.game_state.world.add_component(self.fps_entity, FPSCounter(timer=0.0, time_to_update=1.0))
+
         self.update_map(self.game_state.get_map_data())
 
         self.canvas.request_draw(self.draw_frame)
@@ -253,6 +299,28 @@ class Renderer:
         })
         layouts[BindScope.SpriteInstances] = builder.build("Sprite Instances Layout")
 
+        builder = BindGroupLayoutBuilder(device)
+        builder.add_entry({
+            "binding": 0,
+            "visibility": wgpu.ShaderStage.FRAGMENT,
+            "texture": {"sample_type": wgpu.TextureSampleType.float, "view_dimension": wgpu.TextureViewDimension.d2}
+        })
+        builder.add_entry({
+            "binding": 1,
+            "visibility": wgpu.ShaderStage.FRAGMENT,
+            "sampler": {"type": wgpu.SamplerBindingType.filtering}
+        })
+        layouts[BindScope.FontAtlas] = builder.build("Font Atlas Layout")
+
+        builder = BindGroupLayoutBuilder(device)
+        builder.add_entry({
+            "binding": 0,
+            "visibility": wgpu.ShaderStage.VERTEX,
+            "buffer": {"type": wgpu.BufferBindingType.read_only_storage}
+        })
+        layouts[BindScope.TextInstances] = builder.build("Text Instances Layout")
+
+        builder = BindGroupLayoutBuilder(device)
         builder.add_entry({
             "binding": 0,
             "visibility": wgpu.ShaderStage.COMPUTE,
@@ -307,6 +375,16 @@ class Renderer:
         blit_builder.set_pixel_format(surface_format)
         blit_builder.add_bind_group_layout(layouts[BindScope.BlitTexture])
         pipelines[RenderPipelineType.Blit] = blit_builder.build("Blit Pipeline")
+
+        # Text
+        text_builder = RenderPipelineBuilder(device)
+        text_builder.set_shader_module("text.wgsl", "vs_main", "fs_main")
+        text_builder.set_pixel_format(surface_format)
+        text_builder.enable_alpha_blend()
+        text_builder.add_bind_group_layout(layouts[BindScope.Camera])
+        text_builder.add_bind_group_layout(layouts[BindScope.FontAtlas])
+        text_builder.add_bind_group_layout(layouts[BindScope.TextInstances])
+        pipelines[RenderPipelineType.Text] = text_builder.build("Text Pipeline")
 
         return pipelines
 
@@ -429,6 +507,37 @@ class Renderer:
             self._is_fullscreen = True
         self._last_mouse_x = None
 
+    def update_text(self):
+        self.text_char_count = 0
+        text_bytes = bytearray()
+        
+        for entity_id, (text_comp,) in self.game_state.world.get_components(TextEntity):
+            x_offset = text_comp.x
+            for char in text_comp.text:
+                if char not in self.font_atlas.glyphs:
+                    continue
+                glyph = self.font_atlas.glyphs[char]
+                
+                text_bytes.extend(struct.pack(
+                    "<ffffffffffff",
+                    x_offset, text_comp.y,
+                    glyph["width"] * text_comp.size, glyph["height"] * text_comp.size,
+                    glyph["u_min"], glyph["v_min"],
+                    glyph["u_max"], glyph["v_max"],
+                    text_comp.color[0], text_comp.color[1], text_comp.color[2], text_comp.color[3]
+                ))
+                
+                x_offset += glyph["advance"] * text_comp.size
+                self.text_char_count += 1
+                
+                if self.text_char_count >= self.text_max_chars:
+                    break
+            if self.text_char_count >= self.text_max_chars:
+                break
+                
+        if self.text_char_count > 0:
+            self.queue.write_buffer(self.text_buffer, 0, text_bytes)
+
     def update_sprites(self, cam_x, cam_y):
         import math
         sprites_with_dist = SpriteSystem.update(self.game_state.world, cam_x, cam_y)
@@ -456,8 +565,12 @@ class Renderer:
         
         self.game_state.update(delta_time)
         
-        # Odošle len zmenené dlaždice na GPU
-        if self.game_state.map_manager.dirty_tiles:
+        # Synchronizácia mapy na GPU
+        if self.game_state.map_manager.map_changed_flag:
+            self.update_map(self.game_state.get_map_data())
+            self.game_state.map_manager.map_changed_flag = False
+            self.game_state.map_manager.dirty_tiles.clear()
+        elif self.game_state.map_manager.dirty_tiles:
             for index, x, y, wall, floor, ceil in self.game_state.map_manager.dirty_tiles:
                 self.update_map_tile(index, wall, floor, ceil)
             self.game_state.map_manager.dirty_tiles.clear()
@@ -466,6 +579,8 @@ class Renderer:
         self.update_camera(cam_x, cam_y, cam_angle)
 
         self.update_sprites(cam_x, cam_y)
+        
+        self.update_text()
 
         command_encoder = self.device.create_command_encoder(label="Render Encoder")
 
@@ -529,6 +644,15 @@ class Renderer:
         blit_pass.set_pipeline(self.render_pipelines[RenderPipelineType.Blit])
         blit_pass.set_bind_group(0, self.blit_resources.bind_group, [])
         blit_pass.draw(3, 1, 0, 0)
+        
+        # Vykreslenie textu
+        if self.text_char_count > 0:
+            blit_pass.set_pipeline(self.render_pipelines[RenderPipelineType.Text])
+            blit_pass.set_bind_group(0, self.camera_resources.bind_group, [])
+            blit_pass.set_bind_group(1, self.font_resources.bind_group, [])
+            blit_pass.set_bind_group(2, self.text_resources.bind_group, [])
+            blit_pass.draw(6, self.text_char_count, 0, 0)
+
         blit_pass.end()
 
         self.device.queue.submit([command_encoder.finish()])
