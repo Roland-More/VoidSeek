@@ -123,3 +123,19 @@ class UITextInput:
     text_color: tuple[float, float, float, float] = (1.0, 1.0, 1.0, 1.0)
     placeholder_color: tuple[float, float, float, float] = (0.5, 0.5, 0.5, 1.0)
     cursor_blink_timer: float = 0.0
+
+@dataclass
+class ServerConfig:
+    name: str
+    max_players: int
+    player_speed: float
+    player_reach: float
+    player_radius: float
+    vent_open_time: float
+    tick_rate: int
+
+@dataclass
+class NetworkPlayer:
+    client_id: int
+    name: str
+    is_ready: bool = False
