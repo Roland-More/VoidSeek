@@ -99,3 +99,27 @@ class UISprite:
     color: tuple[float, float, float, float] = (1.0, 1.0, 1.0, 1.0)
     texture_id: int = -1
     use_texture: bool = False
+
+@dataclass
+class UIButton:
+    text: str
+    on_click: callable = None
+    font_size: float = 0.3
+    color_normal: tuple[float, float, float, float] = (0.2, 0.2, 0.3, 1.0)
+    color_hover: tuple[float, float, float, float] = (0.3, 0.3, 0.5, 1.0)
+    text_color: tuple[float, float, float, float] = (1.0, 1.0, 1.0, 1.0)
+    is_hovered: bool = False
+
+@dataclass
+class UITextInput:
+    text: str = ""
+    placeholder: str = ""
+    max_length: int = 32
+    is_active: bool = False
+    on_submit: callable = None
+    font_size: float = 0.3
+    color_normal: tuple[float, float, float, float] = (0.15, 0.15, 0.2, 1.0)
+    color_active: tuple[float, float, float, float] = (0.2, 0.2, 0.35, 1.0)
+    text_color: tuple[float, float, float, float] = (1.0, 1.0, 1.0, 1.0)
+    placeholder_color: tuple[float, float, float, float] = (0.5, 0.5, 0.5, 1.0)
+    cursor_blink_timer: float = 0.0

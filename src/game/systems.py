@@ -275,6 +275,65 @@ class FPSSystem:
                 counter.frame_count = 0
                 text.text = f"FPS: {avg_fps}"
 
+class UISystem:
+    @staticmethod
+    def update(world: World, mouse_x: float, mouse_y: float, mouse_clicked: bool, delta_time: float, key_queue: list[str]):
+        from .components import UIPosition, UISprite, UIButton, UITextInput, TextEntity
+        
+        # Spracovanie tlačidiel
+        for entity_id, (pos, btn) in world.get_components(UIPosition, UIButton):
+            btn.is_hovered = (pos.x <= mouse_x <= pos.x + pos.width) and (pos.y <= mouse_y <= pos.y + pos.height)
+            
+            if mouse_clicked and btn.is_hovered and btn.on_click:
+                btn.on_click()
+                
+            world.add_component(entity_id, UISprite(color=btn.color_hover if btn.is_hovered else btn.color_normal, use_texture=False))
+            
+            char_width = 32 * btn.font_size
+            char_height = 64 * btn.font_size
+            text_width = len(btn.text) * char_width
+            text_x = pos.x + (pos.width - text_width) / 2
+            text_y = pos.y + (pos.height - char_height) / 2
+            world.add_component(entity_id, TextEntity(text=btn.text, x=text_x, y=text_y, size=btn.font_size, color=btn.text_color))
+
+        # Spracovanie textových vstupov
+        for entity_id, (pos, text_input) in world.get_components(UIPosition, UITextInput):
+            is_hovered = (pos.x <= mouse_x <= pos.x + pos.width) and (pos.y <= mouse_y <= pos.y + pos.height)
+            if mouse_clicked:
+                text_input.is_active = is_hovered
+                
+            if text_input.is_active:
+                for key in key_queue:
+                    if key == "backspace":
+                        text_input.text = text_input.text[:-1]
+                    elif key == "space":
+                        if len(text_input.text) < text_input.max_length:
+                            text_input.text += " "
+                    elif key == "enter":
+                        if text_input.on_submit:
+                            text_input.on_submit(text_input.text)
+                    elif len(key) == 1:
+                        if len(text_input.text) < text_input.max_length:
+                            text_input.text += key
+                
+                text_input.cursor_blink_timer += delta_time
+            
+            world.add_component(entity_id, UISprite(color=text_input.color_active if text_input.is_active else text_input.color_normal, use_texture=False))
+            
+            char_height = 64 * text_input.font_size
+            text_x = pos.x + 5
+            text_y = pos.y + (pos.height - char_height) / 2
+            
+            if text_input.text == "" and not text_input.is_active:
+                display_text = text_input.placeholder
+                display_color = text_input.placeholder_color
+            else:
+                show_cursor = text_input.is_active and int(text_input.cursor_blink_timer * 2) % 2 == 0
+                display_text = text_input.text + ("|" if show_cursor else "")
+                display_color = text_input.text_color
+                
+            world.add_component(entity_id, TextEntity(text=display_text, x=text_x, y=text_y, size=text_input.font_size, color=display_color))
+
 class UISpriteSystem:
     @staticmethod
     def update(world: World) -> tuple[bytearray, int]:
@@ -295,13 +354,13 @@ class UISpriteSystem:
                 uv_x, uv_y, uv_w, uv_h = 0.0, 0.0, 1.0, 1.0 # UV pre textúru, prevezme sa neskôr z atlasu
                 
             sprite_bytes.extend(struct.pack(
-                "<ffff ffff ffff I",
+                "<ffff ffff ffff f 12x",
                 ui_pos.x, ui_pos.y,
                 ui_pos.width, ui_pos.height,
                 ui_sprite.color[0], ui_sprite.color[1],
                 ui_sprite.color[2], ui_sprite.color[3],
                 uv_x, uv_y, uv_w, uv_h,
-                1 if ui_sprite.use_texture else 0
+                1.0 if ui_sprite.use_texture else 0.0
             ))
             
         return sprite_bytes, count

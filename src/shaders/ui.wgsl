@@ -10,7 +10,7 @@ struct UIInstance {
     size: vec2<f32>,        // width, height v pixeloch
     color: vec4<f32>,       // RGBA
     uv_rect: vec4<f32>,     // x, y, w, h v atlase
-    use_texture: u32,       // 0 = čistá farba, 1 = textúra * farba
+    use_texture: f32,       // 0.0 = čistá farba, 1.0 = textúra * farba
 }
 
 @group(0) @binding(0) var<uniform> camera: Camera;
@@ -22,7 +22,7 @@ struct VertexOutput {
     @builtin(position) position: vec4<f32>,
     @location(0) uv: vec2<f32>,
     @location(1) color: vec4<f32>,
-    @location(2) @interpolate(flat) use_texture: u32,
+    @location(2) use_texture: f32,
 }
 
 @vertex
@@ -41,7 +41,7 @@ fn vs_main(
     let p = pos_coords[vertex_index];
     
     let pixel_x = instance.position.x + p.x * instance.size.x;
-    let pixel_y = instance.position.y + (1.0 - p.y) * instance.size.y;
+    let pixel_y = instance.position.y + p.y * instance.size.y;
     
     let ndc_x = (pixel_x / camera.resolution.x) * 2.0 - 1.0;
     let ndc_y = 1.0 - (pixel_y / camera.resolution.y) * 2.0;
@@ -59,7 +59,7 @@ fn vs_main(
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    if (in.use_texture == 1u) {
+    if (in.use_texture > 0.5) {
         let tex_color = textureSample(texture_atlas, texture_sampler, in.uv);
         let final_color = tex_color * in.color;
         if (final_color.a < 0.01) {

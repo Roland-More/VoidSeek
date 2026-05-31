@@ -28,7 +28,6 @@ class Renderer:
 
         self.size = (width, height)
         self.canvas = RenderCanvas(title=title, size=(width, height), max_fps=120)
-        self.toggle_mouse_lock()
         self.toggle_fullscreen()
 
         self.device = wgpu.utils.get_default_device()
@@ -235,7 +234,7 @@ class Renderer:
         self.ui_max_elements = 256
         self.ui_buffer = self.device.create_buffer(
             label="UI Instances Buffer",
-            size=self.ui_max_elements * 52,
+            size=self.ui_max_elements * 64,
             usage=wgpu.BufferUsage.STORAGE | wgpu.BufferUsage.COPY_DST
         )
         ui_bind_group = self.device.create_bind_group(
@@ -253,10 +252,19 @@ class Renderer:
         if hasattr(self.scene_manager.current_scene, "start"):
             self.scene_manager.current_scene.start()
 
+        self.mouse_x = 0.0
+        self.mouse_y = 0.0
+        self.mouse_clicked = False
+        self.mouse_pressed = False
+        self.ui_key_queue = []
+        self.shift_held = False
+
         self.canvas.request_draw(self.draw_frame)
         self.canvas.add_event_handler(self.on_key_down, "key_down")
         self.canvas.add_event_handler(self.on_key_up, "key_up")
         self.canvas.add_event_handler(self.on_pointer_move, "pointer_move")
+        self.canvas.add_event_handler(self.on_pointer_down, "pointer_down")
+        self.canvas.add_event_handler(self.on_pointer_up, "pointer_up")
 
     def _build_bind_groups_layouts(self, device):
         layouts = {}
@@ -475,6 +483,12 @@ class Renderer:
 
     def on_key_down(self, event):
         key = event.get("key").lower()
+        
+        if key == "shift":
+            self.shift_held = True
+        elif len(key) == 1 or key in ("backspace", "space", "enter"):
+            self.ui_key_queue.append(key)
+            
         if key == "escape":
             self.canvas.close()
         elif key == "p":
@@ -487,10 +501,18 @@ class Renderer:
 
     def on_key_up(self, event):
         key = event.get("key").lower()
+        if key == "shift":
+            self.shift_held = False
+            
         if self.scene_manager.current_scene:
             self.scene_manager.current_scene.handle_key_up(key)
 
     def on_pointer_move(self, event):
+        w, h = glfw.get_window_size(self.canvas._window)
+        if w > 0 and h > 0:
+            self.mouse_x = event.get("x") * (RENDER_WIDTH / w)
+            self.mouse_y = event.get("y") * (RENDER_HEIGHT / h)
+        
         if self._is_mouse_locked:
             x = event.get("x")
             if self._last_mouse_x is not None:
@@ -500,6 +522,13 @@ class Renderer:
             self._last_mouse_x = x
         else:
             self._last_mouse_x = None
+
+    def on_pointer_down(self, event):
+        self.mouse_clicked = True
+        self.mouse_pressed = True
+
+    def on_pointer_up(self, event):
+        self.mouse_pressed = False
 
     def toggle_mouse_lock(self):
         if self._is_mouse_locked:
@@ -589,7 +618,7 @@ class Renderer:
         self.ui_element_count = min(count, self.ui_max_elements)
         
         if self.ui_element_count > 0:
-            self.queue.write_buffer(self.ui_buffer, 0, sprite_bytes[:self.ui_element_count * 52])
+            self.queue.write_buffer(self.ui_buffer, 0, sprite_bytes[:self.ui_element_count * 64])
 
     def render_ui(self, render_pass):
         if self.ui_element_count == 0:
@@ -607,6 +636,17 @@ class Renderer:
         self.last_time = current_time
         
         if self.scene_manager.current_scene:
+            from game.systems import UISystem
+            UISystem.update(
+                self.scene_manager.current_scene.world,
+                self.mouse_x, self.mouse_y,
+                self.mouse_clicked,
+                delta_time,
+                self.ui_key_queue
+            )
+            self.mouse_clicked = False
+            self.ui_key_queue.clear()
+            
             self.scene_manager.current_scene.update(delta_time)
             
             command_encoder = self.device.create_command_encoder(label="Render Encoder")
@@ -632,6 +672,8 @@ class Renderer:
                 }
             ],
         )
+        self.render_ui(blit_pass)
+        
         if self.text_char_count > 0:
             blit_pass.set_pipeline(self.render_pipelines[RenderPipelineType.Text])
             blit_pass.set_bind_group(0, self.camera_resources.bind_group, [])
@@ -639,7 +681,6 @@ class Renderer:
             blit_pass.set_bind_group(2, self.text_resources.bind_group, [])
             blit_pass.draw(6, self.text_char_count, 0, 0)
             
-        self.render_ui(blit_pass)
         blit_pass.end()
 
     def render_gameplay_scene(self, command_encoder, current_texture_view):
