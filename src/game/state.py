@@ -1,14 +1,15 @@
+from core.scene import Scene
 from .input import InputState
 from .ecs import World
-from .components import Position, Rotation, Velocity, PlayerController, Sprite, Interactible, Vent, TextureAnimator, TextureAnimation
+from .components import Position, Rotation, Velocity, PlayerController, Sprite, Interactible, Vent, TextureAnimator, TextureAnimation, TextEntity, FPSCounter
 from .systems import PlayerInputSystem, MovementSystem, AnimatorSystem, InteractSystem, VentSystem, FPSSystem
 from .map import MapManager
 from .definitions import VentOrientation, PlaybackState, PlaybackMode, VentAnim, VENT_OFFSET, PLAYER_RADIUS, TIME_TO_OPEN_VENT
 import math
 
-class GameState:
-    def __init__(self):
-        self.world = World()
+class GameScene(Scene):
+    def __init__(self, renderer):
+        super().__init__(renderer)
         self.input = InputState()
         
         self.player_entity = self.world.create_entity()
@@ -21,6 +22,11 @@ class GameState:
         self.world.add_component(self.sprite_entity, Position(x=1.5, y=6.5))
         self.world.add_component(self.sprite_entity, Rotation(angle=0.0))
         self.world.add_component(self.sprite_entity, Sprite(z=0.0, scale=1.0, is_visible=True, atlas_index_front=1, atlas_index_back=3))
+
+        # FPS Counter entity
+        self.fps_entity = self.world.create_entity()
+        self.world.add_component(self.fps_entity, TextEntity("FPS: 0", 1.0, 1.0, 0.1, (0.0, 1.0, 0.0, 1.0)))
+        self.world.add_component(self.fps_entity, FPSCounter(timer=0.0, time_to_update=1.0))
 
         self.map_manager = MapManager()
         layout = [
@@ -120,6 +126,52 @@ class GameState:
         InteractSystem.update(self.world, self.input, self.player_entity, self.map_manager.walls)
         VentSystem.update(self.world, delta_time)
         FPSSystem.update(self.world, delta_time)
+
+    def draw(self, encoder, target_view):
+        # Synchronizácia mapy na GPU
+        if self.map_manager.map_changed_flag:
+            self.renderer.update_map(self.get_map_data())
+            self.map_manager.map_changed_flag = False
+            self.map_manager.dirty_tiles.clear()
+        elif self.map_manager.dirty_tiles:
+            for index, x, y, wall, floor, ceil in self.map_manager.dirty_tiles:
+                self.renderer.update_map_tile(index, wall, floor, ceil)
+            self.map_manager.dirty_tiles.clear()
+        
+        cam_x, cam_y, cam_angle = self.camera_pose()
+        self.renderer.update_camera(cam_x, cam_y, cam_angle)
+
+        self.renderer.update_sprites(self.world, cam_x, cam_y)
+        
+        self.renderer.update_text(self.world)
+
+        self.renderer.render(encoder, target_view)
+
+    def handle_key_down(self, key: str):
+        if key == "w":
+            self.input.forward = True
+        elif key == "s":
+            self.input.backward = True
+        elif key == "a":
+            self.input.left = True
+        elif key == "d":
+            self.input.right = True
+        elif key == "e":
+            self.input.interact = True
+            print("Interact key pressed")
+
+    def handle_key_up(self, key: str):
+        if key == "w":
+            self.input.forward = False
+        elif key == "s":
+            self.input.backward = False
+        elif key == "a":
+            self.input.left = False
+        elif key == "d":
+            self.input.right = False
+
+    def handle_mouse_move(self, dx: float):
+        self.input.mouse_dx += dx
 
     def camera_pose(self) -> tuple[float, float, float]:
         pos = self.world.get_component(self.player_entity, Position)

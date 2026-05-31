@@ -15,7 +15,8 @@ class Builder:
     def add_textures(self, names: list[str]):
         self.layers = len(names)
         for i, name in enumerate(names):
-            filepath = os.path.join(os.getcwd(), "src", "assets", name)
+            src_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            filepath = os.path.join(src_dir, "assets", name)
             try:
                 img = Image.open(filepath).convert("RGBA")
             except Exception as e:

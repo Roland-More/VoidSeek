@@ -51,7 +51,8 @@ class Builder:
         }
 
     def build(self, label: str) -> wgpu.GPURenderPipeline:
-        filepath = os.path.join(os.getcwd(), "src", "shaders", self.shader_filename)
+        src_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        filepath = os.path.join(src_dir, "shaders", self.shader_filename)
         with open(filepath, "r") as f:
             source_code = f.read()
 

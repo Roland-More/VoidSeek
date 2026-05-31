@@ -11,8 +11,9 @@ from core.backend.atlas import Builder as AtlasBuilder
 from core.backend.texture import new_offscreen_texture
 from core.backend.definitions import *
 from core.backend.font import FontAtlas
-from game.components import TextEntity, FPSCounter
-from game.state import GameState
+from core.scene import SceneManager
+from game.components import TextEntity
+from game.state import GameScene
 from game.systems import SpriteSystem
 
 class Renderer:
@@ -21,8 +22,7 @@ class Renderer:
         self._is_mouse_locked = False
         self._last_mouse_x = None
 
-        self.game_state = GameState()
-        self.game_state.start()
+        self.scene_manager = SceneManager()
         self.last_time = time.perf_counter()
 
         self.size = (width, height)
@@ -193,7 +193,10 @@ class Renderer:
         # =====================================================================
         # Text Renderer Init
         # =====================================================================
-        self.font_atlas = FontAtlas(self.device, "src/fonts/Jersey10-Regular.ttf", font_size=64)
+        import os
+        src_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        font_path = os.path.join(src_dir, "fonts", "Jersey10-Regular.ttf")
+        self.font_atlas = FontAtlas(self.device, font_path, font_size=64)
         font_sampler = self.device.create_sampler(
             label="Font Sampler",
             address_mode_u=wgpu.AddressMode.clamp_to_edge,
@@ -227,11 +230,12 @@ class Renderer:
         self.text_resources = TextInstanceResources(text_bind_group, self.text_buffer)
         self.text_char_count = 0
 
-        self.fps_entity = self.game_state.world.create_entity()
-        self.game_state.world.add_component(self.fps_entity, TextEntity("FPS: 0", 1.0, 1.0, 0.1, (0.0, 1.0, 0.0, 1.0)))
-        self.game_state.world.add_component(self.fps_entity, FPSCounter(timer=0.0, time_to_update=1.0))
-
-        self.update_map(self.game_state.get_map_data())
+        # Register and start default game scene
+        game_scene = GameScene(self)
+        self.scene_manager.register("game", game_scene)
+        self.scene_manager.switch_to("game")
+        if self.scene_manager.current_scene:
+            self.scene_manager.current_scene.start()
 
         self.canvas.request_draw(self.draw_frame)
         self.canvas.add_event_handler(self.on_key_down, "key_down")
@@ -443,35 +447,22 @@ class Renderer:
             self.toggle_fullscreen()
         elif key == "l":
             self.toggle_mouse_lock()
-        elif key == "w":
-            self.game_state.input.forward = True
-        elif key == "s":
-            self.game_state.input.backward = True
-        elif key == "a":
-            self.game_state.input.left = True
-        elif key == "d":
-            self.game_state.input.right = True
-        elif key == "e":
-            self.game_state.input.interact = True
-            print("Interact key pressed")
+        else:
+            if self.scene_manager.current_scene:
+                self.scene_manager.current_scene.handle_key_down(key)
 
     def on_key_up(self, event):
         key = event.get("key").lower()
-        if key == "w":
-            self.game_state.input.forward = False
-        elif key == "s":
-            self.game_state.input.backward = False
-        elif key == "a":
-            self.game_state.input.left = False
-        elif key == "d":
-            self.game_state.input.right = False
+        if self.scene_manager.current_scene:
+            self.scene_manager.current_scene.handle_key_up(key)
 
     def on_pointer_move(self, event):
         if self._is_mouse_locked:
             x = event.get("x")
             if self._last_mouse_x is not None:
                 dx = x - self._last_mouse_x
-                self.game_state.input.mouse_dx += dx
+                if self.scene_manager.current_scene:
+                    self.scene_manager.current_scene.handle_mouse_move(dx)
             self._last_mouse_x = x
         else:
             self._last_mouse_x = None
@@ -507,11 +498,11 @@ class Renderer:
             self._is_fullscreen = True
         self._last_mouse_x = None
 
-    def update_text(self):
+    def update_text(self, world):
         self.text_char_count = 0
         text_bytes = bytearray()
         
-        for entity_id, (text_comp,) in self.game_state.world.get_components(TextEntity):
+        for entity_id, (text_comp,) in world.get_components(TextEntity):
             x_offset = text_comp.x
             for char in text_comp.text:
                 if char not in self.font_atlas.glyphs:
@@ -538,9 +529,9 @@ class Renderer:
         if self.text_char_count > 0:
             self.queue.write_buffer(self.text_buffer, 0, text_bytes)
 
-    def update_sprites(self, cam_x, cam_y):
+    def update_sprites(self, world, cam_x, cam_y):
         import math
-        sprites_with_dist = SpriteSystem.update(self.game_state.world, cam_x, cam_y)
+        sprites_with_dist = SpriteSystem.update(world, cam_x, cam_y)
         self.sprite_count = min(len(sprites_with_dist), 4096)
         
         if self.sprite_count > 0:
@@ -563,27 +554,20 @@ class Renderer:
         delta_time = current_time - self.last_time
         self.last_time = current_time
         
-        self.game_state.update(delta_time)
-        
-        # Synchronizácia mapy na GPU
-        if self.game_state.map_manager.map_changed_flag:
-            self.update_map(self.game_state.get_map_data())
-            self.game_state.map_manager.map_changed_flag = False
-            self.game_state.map_manager.dirty_tiles.clear()
-        elif self.game_state.map_manager.dirty_tiles:
-            for index, x, y, wall, floor, ceil in self.game_state.map_manager.dirty_tiles:
-                self.update_map_tile(index, wall, floor, ceil)
-            self.game_state.map_manager.dirty_tiles.clear()
-        
-        cam_x, cam_y, cam_angle = self.game_state.camera_pose()
-        self.update_camera(cam_x, cam_y, cam_angle)
+        if self.scene_manager.current_scene:
+            self.scene_manager.current_scene.update(delta_time)
+            
+            command_encoder = self.device.create_command_encoder(label="Render Encoder")
+            current_texture = self.present_context.get_current_texture()
+            current_texture_view = current_texture.create_view()
+            
+            self.scene_manager.current_scene.draw(command_encoder, current_texture_view)
+            
+            self.device.queue.submit([command_encoder.finish()])
+            
+        self.canvas.request_draw(self.draw_frame)
 
-        self.update_sprites(cam_x, cam_y)
-        
-        self.update_text()
-
-        command_encoder = self.device.create_command_encoder(label="Render Encoder")
-
+    def render(self, command_encoder, current_texture_view):
         # 1. Compute Pass
         compute_pass = command_encoder.begin_compute_pass(label="Raycast Compute Pass")
         compute_pass.set_pipeline(self.compute_pipelines[ComputePipelineType.Raycast])
@@ -626,9 +610,6 @@ class Renderer:
         render_pass.end()
         
         # 3. Blit Pass (kreslí na okno)
-        current_texture = self.present_context.get_current_texture()
-        current_texture_view = current_texture.create_view()
-
         blit_pass = command_encoder.begin_render_pass(
             label="Blit Pass",
             color_attachments=[
@@ -654,6 +635,3 @@ class Renderer:
             blit_pass.draw(6, self.text_char_count, 0, 0)
 
         blit_pass.end()
-
-        self.device.queue.submit([command_encoder.finish()])
-        self.canvas.request_draw(self.draw_frame)
