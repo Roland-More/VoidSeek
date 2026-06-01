@@ -54,7 +54,8 @@ class GameServer:
         
         # UDP Setup
         self.udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        ttl = 1
+        self.udp_socket.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, ttl)
         self.udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         
         self.clients: list[ClientConnection] = []
@@ -84,8 +85,8 @@ class GameServer:
                     }
                     message = json.dumps(payload).encode("utf-8")
                     try:
-                        self.udp_socket.sendto(message, ("<broadcast>", self.udp_port))
-                        self.udp_socket.sendto(message, ("127.0.0.1", self.udp_port))
+                        self.udp_socket.sendto(message, ("224.1.1.1", 5007))
+                        print(f"[UDP] Odoslané: {payload}")
                     except Exception as e:
                         print(f"[UDP] Broadcast error: {e}")
                 time.sleep(5.0)
@@ -234,6 +235,12 @@ class GameServer:
             client.socket.close()
             self.clients.remove(client)
             self.world.destroy_entity(client.player_entity)
+            
+            if self.state == "game" and len(self.clients) < 2:
+                print("[TCP] Nedostatok hráčov. Návrat do lobby.")
+                self.state = "lobby"
+                for c in self.clients:
+                    c.is_ready = False
             
             # Zruš ready ak klesol počet pod 2 alebo iný dôvod
             if self.state == "lobby":

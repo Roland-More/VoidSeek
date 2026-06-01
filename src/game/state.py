@@ -142,28 +142,6 @@ class GameplayScene(Scene):
         self.renderer.set_cursor_locked(False)
 
     def update(self, delta_time: float):
-        import glfw
-        window = self.renderer.canvas._window
-        
-        # Uisti sa, že je myš uzamknutá
-        if not getattr(self, "_mouse_unlocked", False):
-            if glfw.get_input_mode(window, glfw.CURSOR) != glfw.CURSOR_DISABLED:
-                glfw.set_input_mode(window, glfw.CURSOR, glfw.CURSOR_DISABLED)
-                
-            # Čítanie raw pohybu myši
-            current_x, current_y = glfw.get_cursor_pos(window)
-            if not hasattr(self, "_last_mouse_pos"):
-                self._last_mouse_pos = (current_x, current_y)
-                
-            dx = current_x - self._last_mouse_pos[0]
-            self._last_mouse_pos = (current_x, current_y)
-            
-            if dx != 0.0:
-                self.input.mouse_dx += dx
-        else:
-            if glfw.get_input_mode(window, glfw.CURSOR) != glfw.CURSOR_NORMAL:
-                glfw.set_input_mode(window, glfw.CURSOR, glfw.CURSOR_NORMAL)
-
         PlayerInputSystem.update(self.world, self.input)
         MovementSystem.update(self.world, delta_time, self.map_manager.walls, self.input, self.player_radius)
         AnimatorSystem.update(self.world, delta_time, self.map_manager)
@@ -202,14 +180,9 @@ class GameplayScene(Scene):
             self.input.right = True
         elif key == "e":
             self.input.interact = True
-            print("Interact key pressed")
-        elif key == "Escape":
-            self._mouse_unlocked = not getattr(self, "_mouse_unlocked", False)
-            if not self._mouse_unlocked:
-                import glfw
-                window = self.renderer.canvas._window
-                current_x, current_y = glfw.get_cursor_pos(window)
-                self._last_mouse_pos = (current_x, current_y)
+            
+    def handle_mouse_move(self, dx: float):
+        self.input.mouse_dx += dx
 
     def handle_key_up(self, key: str):
         if key == "w":

@@ -269,6 +269,11 @@ class Renderer:
         self.canvas.add_event_handler(self.on_pointer_move, "pointer_move")
         self.canvas.add_event_handler(self.on_pointer_down, "pointer_down")
         self.canvas.add_event_handler(self.on_pointer_up, "pointer_up")
+        self.canvas.add_event_handler(self.on_wheel, "wheel")
+        
+        # Register glfw char callback for real keyboard character mapping
+        import glfw
+        glfw.set_char_callback(self.canvas._window, self.on_char)
 
     def _build_bind_groups_layouts(self, device):
         layouts = {}
@@ -490,7 +495,7 @@ class Renderer:
         
         if key == "shift":
             self.shift_held = True
-        elif len(key) == 1 or key in ("backspace", "space", "enter"):
+        elif key in ("backspace", "enter"):
             self.ui_key_queue.append(key)
             
         if key == "escape":
@@ -540,6 +545,18 @@ class Renderer:
     def on_pointer_up(self, event):
         self.mouse_pressed = False
 
+    def on_wheel(self, event):
+        dy = event.get("dy")
+        if dy is None:
+            dy = event.get("y", 0)
+        if self.scene_manager.current_scene and hasattr(self.scene_manager.current_scene, "handle_mouse_wheel"):
+            self.scene_manager.current_scene.handle_mouse_wheel(dy)
+
+    def on_char(self, window, codepoint):
+        # Callback for real keyboard text input handling layout and shifts natively
+        char = chr(codepoint)
+        self.ui_key_queue.append(char)
+
     def toggle_mouse_lock(self):
         if self._is_mouse_locked:
             glfw.set_input_mode(self.canvas._window, glfw.CURSOR, glfw.CURSOR_NORMAL)
@@ -584,6 +601,12 @@ class Renderer:
                     if char in self.font_atlas.glyphs:
                         total_width += self.font_atlas.glyphs[char]["advance"] * text_comp.size
                 x_offset -= total_width / 2.0
+            elif getattr(text_comp, "alignment", "left") == "right":
+                total_width = 0.0
+                for char in text_comp.text:
+                    if char in self.font_atlas.glyphs:
+                        total_width += self.font_atlas.glyphs[char]["advance"] * text_comp.size
+                x_offset -= total_width
                 
             for char in text_comp.text:
                 if char not in self.font_atlas.glyphs:
@@ -592,7 +615,7 @@ class Renderer:
                 
                 text_bytes.extend(struct.pack(
                     "<ffffffffffff",
-                    x_offset, text_comp.y,
+                    x_offset, text_comp.y + glyph["top"] * text_comp.size,
                     glyph["width"] * text_comp.size, glyph["height"] * text_comp.size,
                     glyph["u_min"], glyph["v_min"],
                     glyph["u_max"], glyph["v_max"],

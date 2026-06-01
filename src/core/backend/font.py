@@ -55,7 +55,8 @@ class FontAtlas:
                 "v_max": v_max,
                 "width": width,
                 "height": height,
-                "advance": advance
+                "advance": advance,
+                "top": top
             }
             
         # img.save("font_atlas_debug.png")
