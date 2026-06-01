@@ -4,6 +4,7 @@ import wgpu
 from core.scene import Scene
 from .ecs import World
 from .components import UIPosition, UIButton, TextEntity
+from shared.protocol import encode_message, decode_messages
 
 class RoomScene(Scene):
     def __init__(self, renderer, scene_manager):
@@ -12,7 +13,8 @@ class RoomScene(Scene):
         self.world = World()
         self.network_client = None
         self.is_ready = False
-        
+        self.recv_buffer = b""
+        self.my_player_id = None
         self.players = []
         self.player_entities = []
         
@@ -41,7 +43,16 @@ class RoomScene(Scene):
         self.network_client = getattr(self.scene_manager, 'network_client', None)
         self.is_ready = False
         self.players = []
+        self.recv_buffer = b""
         self._update_ready_btn()
+        
+        # Odošleme úvodnú správu JOIN na server
+        if self.network_client:
+            try:
+                payload = {"type": "join", "name": "Hráč"}
+                self.network_client.sendall(encode_message(payload))
+            except Exception as e:
+                print(f"Nepodarilo sa poslať join: {e}")
 
     def disconnect(self):
         if self.network_client:
@@ -57,7 +68,7 @@ class RoomScene(Scene):
         if self.network_client:
             try:
                 payload = {"type": "ready", "value": self.is_ready}
-                self.network_client.sendall((json.dumps(payload) + "\n").encode("utf-8"))
+                self.network_client.sendall(encode_message(payload))
             except Exception as e:
                 print(f"Chyba pri odosielaní: {e}")
                 self.disconnect()
@@ -86,15 +97,16 @@ class RoomScene(Scene):
                 self.disconnect()
                 return
                 
-            messages = data.decode("utf-8").strip().split('\n')
-            for msg in messages:
-                if not msg:
-                    continue
-                payload = json.loads(msg)
+            self.recv_buffer += data
+            messages, self.recv_buffer = decode_messages(self.recv_buffer)
+            
+            for payload in messages:
                 if payload.get("type") == "player_list":
                     self.players = payload.get("players", [])
                     self._refresh_player_list()
                 elif payload.get("type") == "game_start":
+                    self.my_player_id = payload.get("your_id")
+                    print(f"Hra sa začína! Moje ID: {self.my_player_id}")
                     self.scene_manager.switch_to("game")
                     
         except BlockingIOError:
@@ -105,15 +117,17 @@ class RoomScene(Scene):
 
     def _refresh_player_list(self):
         for ent in self.player_entities:
-            self.world.remove_entity(ent)
+            self.world.destroy_entity(ent)
         self.player_entities.clear()
         
         for i, player in enumerate(self.players):
             ent = self.world.create_entity()
-            ready_str = "[READY]" if player.get("ready") else "[WAITING]"
+            ready_str = "✓" if player.get("ready") else "✗"
+            color = (0.2, 0.8, 0.2, 1.0) if player.get("ready") else (1.0, 1.0, 1.0, 1.0)
+            
             self.world.add_component(ent, TextEntity(
                 text=f"{player.get('name', 'Unknown')} {ready_str}",
-                x=140, y=80 + i * 20, size=0.3, color=(1.0, 1.0, 1.0, 1.0)
+                x=240, y=200 + i * 40, size=0.5, color=color, alignment="center"
             ))
             self.player_entities.append(ent)
 

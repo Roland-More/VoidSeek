@@ -4,6 +4,7 @@ import json
 import time
 from game.ecs import World
 from game.components import ServerConfig, NetworkPlayer
+from shared.protocol import encode_message, decode_messages
 
 # Ak by bolo potrebné Position z components
 try:
@@ -22,6 +23,7 @@ class ClientConnection:
         self.player_entity = player_entity
         self.name = name
         self.is_ready = False
+        self.recv_buffer = b""
 
 class GameServer:
     def __init__(self, name: str, tcp_port: int, udp_port: int, max_players: int):
@@ -120,22 +122,75 @@ class GameServer:
         thread = threading.Thread(target=listener_loop, daemon=True)
         thread.start()
         
+    def broadcast(self, msg: dict):
+        data = encode_message(msg)
+        for client in list(self.clients):
+            try:
+                client.socket.sendall(data)
+            except Exception:
+                self._disconnect_client(client)
+
+    def build_player_list(self) -> dict:
+        return {
+            "type": "player_list",
+            "players": [{"name": c.name, "ready": c.is_ready, "id": i} for i, c in enumerate(self.clients)]
+        }
+
+    def _handle_client_message(self, client: ClientConnection, msg: dict):
+        msg_type = msg.get("type")
+        if msg_type == "join":
+            client.name = msg.get("name", client.name)
+            player_comp = self.world.get_component(client.player_entity, NetworkPlayer)
+            if player_comp:
+                player_comp.name = client.name
+            self.broadcast(self.build_player_list())
+            
+        elif msg_type == "ready":
+            client.is_ready = msg.get("value", False)
+            self.broadcast(self.build_player_list())
+            
+            # Skontroluj či sú všetci ready a aspoň 2 hráči
+            if len(self.clients) >= 2 and all(c.is_ready for c in self.clients):
+                print("[TCP] Všetci hráči pripravení! Štartujem hru...")
+                self.state = "game"
+                for i, c in enumerate(self.clients):
+                    try:
+                        c.socket.sendall(encode_message({"type": "game_start", "your_id": i}))
+                    except Exception:
+                        pass
+                self.start_game()
+
+    def start_game(self):
+        # Tu sa neskôr doplní logika na spustenie hry (inicializácia mapy, spawn pointov atď.)
+        pass
+
+    def _disconnect_client(self, client: ClientConnection):
+        if client in self.clients:
+            print(f"[TCP] Klient {client.name} sa odpojil.")
+            client.socket.close()
+            self.clients.remove(client)
+            self.world.destroy_entity(client.player_entity)
+            
+            # Zruš ready ak klesol počet pod 2 alebo iný dôvod
+            if self.state == "lobby":
+                self.broadcast(self.build_player_list())
+
     def _handle_client(self, client: ClientConnection):
         try:
             while self._running:
-                data = client.socket.recv(1024)
+                data = client.socket.recv(4096)
                 if not data:
                     break
-                # TODO: Spracovanie prijatých dát od klienta
+                client.recv_buffer += data
+                messages, client.recv_buffer = decode_messages(client.recv_buffer)
+                for msg in messages:
+                    self._handle_client_message(client, msg)
         except ConnectionResetError:
             pass
         except Exception as e:
             print(f"[TCP] Klient {client.name} error: {e}")
         finally:
-            print(f"[TCP] Klient {client.name} sa odpojil.")
-            client.socket.close()
-            if client in self.clients:
-                self.clients.remove(client)
+            self._disconnect_client(client)
 
     def run(self):
         self._running = True

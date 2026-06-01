@@ -678,6 +678,11 @@ class Renderer:
             
         self.canvas.request_draw(self.draw_frame)
 
+    def set_cursor_locked(self, locked: bool):
+        import glfw
+        mode = glfw.CURSOR_DISABLED if locked else glfw.CURSOR_NORMAL
+        glfw.set_input_mode(self.canvas._window, glfw.CURSOR, mode)
+
     def render_menu_scene(self, command_encoder, current_texture_view):
         blit_pass = command_encoder.begin_render_pass(
             label="Menu Blit Pass",
