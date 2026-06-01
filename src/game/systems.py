@@ -8,7 +8,6 @@ from .input import InputState
 TILE_SIZE = 64
 MAX_MAP_WIDTH = 8
 MAX_MAP_HEIGHT = 8
-PLAYER_RADIUS = 0.15
 
 # =============================================================================
 # Numba-optimalizované matematické funkcie
@@ -100,9 +99,9 @@ class PlayerInputSystem:
 
 class MovementSystem:
     @staticmethod
-    def update(world: World, delta_time: float, map_walls: list[int], inp: InputState):
+    def update(world: World, delta_time: float, map_walls: list[int], inp: InputState, player_radius: float):
         walls_arr = np.array(map_walls, dtype=np.int32)
-        for entity_id, (pos, rot, vel) in world.get_components(Position, Rotation, Velocity):
+        for entity_id, (pos, rot, vel, ctrl) in world.get_components(Position, Rotation, Velocity, PlayerController):
             move_x = 0.0
             move_y = 0.0
 
@@ -131,10 +130,10 @@ class MovementSystem:
                 move_x = (move_x / magnitude) * vel.speed * delta_time
                 move_y = (move_y / magnitude) * vel.speed * delta_time
 
-                if not _is_wall(pos.x + move_x, pos.y, walls_arr, MAX_MAP_WIDTH, MAX_MAP_HEIGHT, PLAYER_RADIUS):
+                if not _is_wall(pos.x + move_x, pos.y, walls_arr, MAX_MAP_WIDTH, MAX_MAP_HEIGHT, player_radius):
                     pos.x += move_x
                 
-                if not _is_wall(pos.x, pos.y + move_y, walls_arr, MAX_MAP_WIDTH, MAX_MAP_HEIGHT, PLAYER_RADIUS):
+                if not _is_wall(pos.x, pos.y + move_y, walls_arr, MAX_MAP_WIDTH, MAX_MAP_HEIGHT, player_radius):
                     pos.y += move_y
 
 class SpriteSystem:
@@ -205,9 +204,7 @@ class AnimatorSystem:
 
 class InteractSystem:
     @staticmethod
-    def update(world: World, input_state: InputState, player_entity, map_walls: list[int]):
-        from .definitions import INTERACT_DISTANCE
-
+    def update(world: World, input_state: InputState, player_entity, map_walls: list[int], interact_distance: float):
         if not input_state.interact or player_entity is None:
             return
         input_state.interact = False
@@ -224,7 +221,7 @@ class InteractSystem:
         walls_arr = np.array(map_walls, dtype=np.int32)
         hit_mx, hit_my, hit_dist = _dda_raycast(
             player_x, player_y, dir_x, dir_y,
-            walls_arr, MAX_MAP_WIDTH, MAX_MAP_HEIGHT, INTERACT_DISTANCE
+            walls_arr, MAX_MAP_WIDTH, MAX_MAP_HEIGHT, interact_distance
         )
 
         entity_hit = None
@@ -245,21 +242,21 @@ class InteractSystem:
 
 class VentSystem:
     @staticmethod
-    def update(world: World, delta_time: float):
+    def update(world: World, delta_time: float, vent_open_time: float):
         from .components import Vent, TextureAnimator
         from .definitions import PlaybackState, VentAnim
-        
-        for entity_id, (vent, texture_animator) in world.get_components(Vent, TextureAnimator):
+
+        for entity, (vent, animator) in world.get_components(Vent, TextureAnimator):
             if vent.is_open:
                 continue
             vent.timer += delta_time
-            if vent.timer >= vent.time_to_open:
+            if vent.timer >= vent_open_time:
                 vent.is_open = True
                 vent.timer = 0.0
-                texture_animator.current_animation = ("Vent", VentAnim.OPENING)
-                texture_animator.playback_state = PlaybackState.PLAYING
-                texture_animator.current_frame = 0
-                texture_animator.timer = 0.0
+                animator.current_animation = ("Vent", VentAnim.OPENING)
+                animator.playback_state = PlaybackState.PLAYING
+                animator.current_frame = 0
+                animator.timer = 0.0
 
 class FPSSystem:
     @staticmethod

@@ -13,7 +13,7 @@ class MapManager:
         self.dirty_tiles = []
         self.map_changed_flag = False
         
-    def load_from_layout(self, layout: list[str], game_state):
+    def load_from_layout(self, layout: list[str], game_state=None):
         vents_to_place = []
 
         for y, row in enumerate(layout):
@@ -37,7 +37,8 @@ class MapManager:
             index = y * self.width + x
             if valid:
                 self.walls[index] = 13
-                game_state.create_vent(x, y, True, orientation)
+                if game_state:
+                    game_state.create_vent(x, y, True, orientation)
             else:
                 self.walls[index] = 1
 

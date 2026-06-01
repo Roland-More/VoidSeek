@@ -8,50 +8,58 @@ from .definitions import VentOrientation, PlaybackState, PlaybackMode, VentAnim,
 import math
 
 class GameplayScene(Scene):
-    def __init__(self, renderer, scene_manager):
+    def __init__(self, renderer, scene_manager, init_data: dict, tcp_socket=None):
         super().__init__(renderer)
         self.scene_manager = scene_manager
+        self.tcp_socket = tcp_socket
         self.input = InputState()
         
-        self.player_entity = self.world.create_entity()
-        self.world.add_component(self.player_entity, Position(x=1.5, y=1.5))
-        self.world.add_component(self.player_entity, Rotation(angle=0.0))
-        self.world.add_component(self.player_entity, Velocity(speed=1.95))
-        self.world.add_component(self.player_entity, PlayerController())
+        config = init_data["config"]
+        self.player_speed = config["player_speed"]
+        self.player_reach = config["player_reach"]
+        self.player_radius = config["player_radius"]
+        self.vent_open_time = config["vent_open_time"]
 
-        self.sprite_entity = self.world.create_entity()
-        self.world.add_component(self.sprite_entity, Position(x=1.5, y=6.5))
-        self.world.add_component(self.sprite_entity, Rotation(angle=0.0))
-        self.world.add_component(self.sprite_entity, Sprite(z=0.0, scale=1.0, is_visible=True, atlas_index_front=1, atlas_index_back=3))
+        self.map_manager = MapManager()
+        self.map_manager.load_from_layout(init_data["map"]["layout"])
 
-        # FPS Counter entity
+        self.my_player_id = None
+        self.player_entity = None
+
+        # Vytvor hráčov
+        for p in init_data["players"]:
+            entity = self.world.create_entity()
+            self.world.add_component(entity, Position(p["x"], p["y"]))
+            self.world.add_component(entity, Rotation(angle=0.0))
+            self.world.add_component(entity, Velocity(speed=self.player_speed))
+            
+            # TODO: self.my_player_id sa nastaví po vytvorení triedy (pred štartom)
+            # a potom by sme mali priradiť PlayerController. Dočasne zatiaľ uložím všetky.
+            # Spravíme to tak, že controller sa pridá neskôr alebo cez nejakú funkciu.
+            self.world.add_component(entity, Sprite(z=0.0, scale=1.0, is_visible=True, atlas_index_front=1, atlas_index_back=3))
+            
+            # Pomocná premenná
+            p["entity_id"] = entity
+            
+        self._temp_players = init_data["players"]
+
+        for v in init_data["vents"]:
+            self.create_vent(int(v["x"]), int(v["y"]), True, VentOrientation(v["orientation"]))
+
         self.fps_entity = self.world.create_entity()
         self.world.add_component(self.fps_entity, TextEntity("FPS: 0", 1.0, 1.0, 0.1, (0.0, 1.0, 0.0, 1.0)))
         self.world.add_component(self.fps_entity, FPSCounter(timer=0.0, time_to_update=1.0))
-
-        self.map_manager = MapManager()
-        layout = [
-            "11111111",
-            "1.1....1",
-            "1.1.11.1",
-            "1.1V1..1",
-            "1...V..1",
-            "1.111..1",
-            "1......1",
-            "11111111",
-        ]
-        self.map_manager.load_from_layout(layout, self)
 
     def create_vent(self, x: int, y: int, is_active: bool, orientation: VentOrientation):
         vent_center_x, vent_center_y = float(x) + 0.5, float(y) + 0.5
         
         pos_1, pos_2 = None, None
         if orientation == VentOrientation.VERTICAL:
-            pos_1 = Position(vent_center_x, vent_center_y - 0.5 - PLAYER_RADIUS - VENT_OFFSET)
-            pos_2 = Position(vent_center_x, vent_center_y + 0.5 + PLAYER_RADIUS + VENT_OFFSET)
+            pos_1 = Position(vent_center_x, vent_center_y - 0.5 - self.player_radius - VENT_OFFSET)
+            pos_2 = Position(vent_center_x, vent_center_y + 0.5 + self.player_radius + VENT_OFFSET)
         elif orientation == VentOrientation.HORIZONTAL:
-            pos_1 = Position(vent_center_x - 0.5 - PLAYER_RADIUS - VENT_OFFSET, vent_center_y)
-            pos_2 = Position(vent_center_x + 0.5 + PLAYER_RADIUS + VENT_OFFSET, vent_center_y)
+            pos_1 = Position(vent_center_x - 0.5 - self.player_radius - VENT_OFFSET, vent_center_y)
+            pos_2 = Position(vent_center_x + 0.5 + self.player_radius + VENT_OFFSET, vent_center_y)
             
         vent_entity = self.world.create_entity()
         self.world.add_component(vent_entity, Position(float(x), float(y)))
@@ -117,10 +125,17 @@ class GameplayScene(Scene):
             animator.current_frame = 0
             animator.timer = 0.0
 
-    def start(self):
-        PlayerInputSystem.update(self.world, self.input)
-
     def on_enter(self):
+        # Nájdi môjho hráča a priraď mu ovládanie
+        for p in getattr(self, "_temp_players", []):
+            if p["id"] == self.my_player_id:
+                self.player_entity = p["entity_id"]
+                self.world.add_component(self.player_entity, PlayerController())
+                
+                sprite = self.world.get_component(self.player_entity, Sprite)
+                if sprite:
+                    sprite.is_visible = False
+                    
         self.renderer.set_cursor_locked(True)
 
     def on_exit(self):
@@ -150,10 +165,10 @@ class GameplayScene(Scene):
                 glfw.set_input_mode(window, glfw.CURSOR, glfw.CURSOR_NORMAL)
 
         PlayerInputSystem.update(self.world, self.input)
-        MovementSystem.update(self.world, delta_time, self.map_manager.walls, self.input)
+        MovementSystem.update(self.world, delta_time, self.map_manager.walls, self.input, self.player_radius)
         AnimatorSystem.update(self.world, delta_time, self.map_manager)
-        InteractSystem.update(self.world, self.input, self.player_entity, self.map_manager.walls)
-        VentSystem.update(self.world, delta_time)
+        InteractSystem.update(self.world, self.input, self.player_entity, self.map_manager.walls, self.player_reach)
+        VentSystem.update(self.world, delta_time, self.vent_open_time)
         FPSSystem.update(self.world, delta_time)
 
     def draw(self, encoder, target_view):
@@ -205,9 +220,6 @@ class GameplayScene(Scene):
             self.input.left = False
         elif key == "d":
             self.input.right = False
-
-    def handle_mouse_move(self, dx: float):
-        self.input.mouse_dx += dx
 
     def camera_pose(self) -> tuple[float, float, float]:
         pos = self.world.get_component(self.player_entity, Position)

@@ -252,7 +252,6 @@ class Renderer:
         self.scene_manager.register("server_list", ServerListScene(self, self.scene_manager))
         from game.room import RoomScene
         self.scene_manager.register("room", RoomScene(self, self.scene_manager))
-        self.scene_manager.register("game", GameplayScene(self, self.scene_manager))
         self.scene_manager.switch_to("menu")
         if hasattr(self.scene_manager.current_scene, "start"):
             self.scene_manager.current_scene.start()

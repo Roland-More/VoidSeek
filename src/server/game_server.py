@@ -3,8 +3,10 @@ import threading
 import json
 import time
 from game.ecs import World
-from game.components import ServerConfig, NetworkPlayer
+from game.components import ServerConfig, NetworkPlayer, Position
 from shared.protocol import encode_message, decode_messages
+from game.map import MapManager
+from game.definitions import VentOrientation
 
 # Ak by bolo potrebné Position z components
 try:
@@ -161,8 +163,70 @@ class GameServer:
                 self.start_game()
 
     def start_game(self):
-        # Tu sa neskôr doplní logika na spustenie hry (inicializácia mapy, spawn pointov atď.)
-        pass
+        # 1. Inicializácia mapy na strane servera
+        self.map_manager = MapManager()
+        layout = [
+            "11111111",
+            "1.1....1",
+            "1.1.11.1",
+            "1.1V1..1",
+            "1...V..1",
+            "1.111..1",
+            "1......1",
+            "11111111"
+        ]
+        self.map_manager.load_from_layout(layout)
+        
+        # 2. Nastavenie spawn pointov hráčom (zatiaľ hardcoded)
+        spawn_points = [(1.5, 1.5), (6.5, 6.5), (1.5, 6.5), (6.5, 1.5)]
+        players_data = []
+        for i, client in enumerate(self.clients):
+            spawn_x, spawn_y = spawn_points[i % len(spawn_points)]
+            
+            # Aktualizácia pozície na serveri
+            pos = self.world.get_component(client.player_entity, Position)
+            if pos:
+                pos.x = spawn_x
+                pos.y = spawn_y
+                
+            players_data.append({
+                "id": i,
+                "name": client.name,
+                "x": spawn_x,
+                "y": spawn_y
+            })
+            
+        # 3. Zozbieranie dát o ventoch (momentálne hardcoded v map layout)
+        vents_data = []
+        for y, row in enumerate(layout):
+            for x, char in enumerate(row):
+                if char == 'V':
+                    # Pre jednoduchosť zatiaľ horizontálna orientácia
+                    vents_data.append({
+                        "x": float(x) + 0.5,
+                        "y": float(y) + 0.5,
+                        "orientation": VentOrientation.HORIZONTAL.value
+                    })
+
+        # 4. Zostavenie inicializačného balíčka a rozposlanie
+        init_data = {
+            "type": "game_init",
+            "config": {
+                "player_speed": 1.95,
+                "player_reach": 1.5,
+                "player_radius": 0.15,
+                "vent_open_time": 10.0
+            },
+            "map": {
+                "width": self.map_manager.width,
+                "height": self.map_manager.height,
+                "layout": layout
+            },
+            "players": players_data,
+            "vents": vents_data
+        }
+        
+        self.broadcast(init_data)
 
     def _disconnect_client(self, client: ClientConnection):
         if client in self.clients:

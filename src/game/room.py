@@ -107,6 +107,11 @@ class RoomScene(Scene):
                 elif payload.get("type") == "game_start":
                     self.my_player_id = payload.get("your_id")
                     print(f"Hra sa začína! Moje ID: {self.my_player_id}")
+                elif payload.get("type") == "game_init":
+                    from game.state import GameplayScene
+                    gameplay = GameplayScene(self.renderer, self.scene_manager, payload, self.network_client)
+                    gameplay.my_player_id = self.my_player_id
+                    self.scene_manager.register("game", gameplay)
                     self.scene_manager.switch_to("game")
                     
         except BlockingIOError:
