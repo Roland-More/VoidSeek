@@ -329,10 +329,7 @@ class UISystem:
                 
             world.add_component(entity_id, TextEntity(text=display_text, x=text_x, y=text_y, size=text_input.font_size, color=display_color))
             
-        # Vizuálny ladiaci kurzor
-        cursor_id = 999999
-        world.add_component(cursor_id, UIPosition(x=mouse_x - 2, y=mouse_y - 2, width=4, height=4, z_index=999))
-        world.add_component(cursor_id, UISprite(color=(1.0, 0.0, 0.0, 1.0), use_texture=False))
+
 
 class UISpriteSystem:
     @staticmethod
