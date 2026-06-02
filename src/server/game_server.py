@@ -52,16 +52,6 @@ class GameServer:
         self.tcp_socket.bind(("0.0.0.0", self.tcp_port))
         self.tcp_socket.listen()
         
-        # UDP Setup
-        self.udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        ttl = 1
-        self.udp_socket.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, ttl)
-        self.udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        
-        self.clients: list[ClientConnection] = []
-        self.state = "lobby"
-        self._running = False
-        
         # Determine local IP
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -70,6 +60,20 @@ class GameServer:
             s.close()
         except Exception:
             self.local_ip = socket.gethostbyname(socket.gethostname())
+            
+        # UDP Setup
+        self.udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        ttl = 1
+        self.udp_socket.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, ttl)
+        self.udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            self.udp_socket.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF, socket.inet_aton(self.local_ip))
+        except Exception as e:
+            print(f"[UDP] Nepodarilo sa nastaviť IP_MULTICAST_IF: {e}")
+        
+        self.clients: list[ClientConnection] = []
+        self.state = "lobby"
+        self._running = False
 
     def start_udp_broadcast(self):
         def broadcast_loop():
@@ -178,8 +182,8 @@ class GameServer:
         ]
         self.map_manager.load_from_layout(layout)
         
-        # 2. Nastavenie spawn pointov hráčom (zatiaľ hardcoded)
-        spawn_points = [(1.5, 1.5), (6.5, 6.5), (1.5, 6.5), (6.5, 1.5)]
+        # 2. Nastavenie spawn pointov hráčom
+        spawn_points = [(1.5, 1.5)]
         players_data = []
         for i, client in enumerate(self.clients):
             spawn_x, spawn_y = spawn_points[i % len(spawn_points)]
@@ -197,17 +201,18 @@ class GameServer:
                 "y": spawn_y
             })
             
-        # 3. Zozbieranie dát o ventoch (momentálne hardcoded v map layout)
+        # 3. Zozbieranie dát o ventoch
         vents_data = []
         for y, row in enumerate(layout):
             for x, char in enumerate(row):
                 if char == 'V':
-                    # Pre jednoduchosť zatiaľ horizontálna orientácia
-                    vents_data.append({
-                        "x": float(x) + 0.5,
-                        "y": float(y) + 0.5,
-                        "orientation": VentOrientation.HORIZONTAL.value
-                    })
+                    valid, orientation = self.map_manager.check_vent_placement(x, y)
+                    if valid:
+                        vents_data.append({
+                            "x": float(x) + 0.5,
+                            "y": float(y) + 0.5,
+                            "orientation": orientation.value
+                        })
 
         # 4. Zostavenie inicializačného balíčka a rozposlanie
         init_data = {

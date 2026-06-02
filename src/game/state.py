@@ -30,7 +30,7 @@ class GameplayScene(Scene):
         for p in init_data["players"]:
             entity = self.world.create_entity()
             self.world.add_component(entity, Position(p["x"], p["y"]))
-            self.world.add_component(entity, Rotation(angle=0.0))
+            self.world.add_component(entity, Rotation(angle=math.pi / 2.0))
             self.world.add_component(entity, Velocity(speed=self.player_speed))
             
             # TODO: self.my_player_id sa nastaví po vytvorení triedy (pred štartom)

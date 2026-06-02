@@ -19,8 +19,23 @@ class ServerListScene(Scene):
         self.udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.udp_socket.bind(("", 5007))
         group = socket.inet_aton("224.1.1.1")
-        mreq = struct.pack("4s4s", group, socket.inet_aton("0.0.0.0"))
-        self.udp_socket.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
+        # Get local IP
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            local_ip = s.getsockname()[0]
+            s.close()
+        except Exception:
+            local_ip = socket.gethostbyname(socket.gethostname())
+
+        mreq = struct.pack("4s4s", group, socket.inet_aton(local_ip))
+        try:
+            self.udp_socket.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
+        except Exception as e:
+            print(f"[UDP] Nepodarilo sa pridať do multicast skupiny s {local_ip}: {e}")
+            # Fallback
+            mreq = struct.pack("4s4s", group, socket.inet_aton("0.0.0.0"))
+            self.udp_socket.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
         self.udp_socket.setblocking(False)
         
         self.servers = []
