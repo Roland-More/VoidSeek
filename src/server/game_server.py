@@ -495,6 +495,8 @@ class GameServer:
         try:
             self.tcp_socket.close()
             self.udp_socket.close()
+            if hasattr(self, 'game_udp_socket'):
+                self.game_udp_socket.close()
             for client in self.clients:
                 client.socket.close()
         except Exception:

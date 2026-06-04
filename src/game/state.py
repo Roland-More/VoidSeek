@@ -8,6 +8,7 @@ from .definitions import VentOrientation, PlaybackState, PlaybackMode, VentAnim,
 import math
 import socket
 from shared.protocol import encode_message, decode_messages, encode_udp, decode_udp
+from core.backend.definitions import RENDER_WIDTH, RENDER_HEIGHT
 
 class GameplayScene(Scene):
     def __init__(self, renderer, scene_manager, init_data: dict, tcp_socket=None):
@@ -76,6 +77,16 @@ class GameplayScene(Scene):
         self.fps_entity = self.world.create_entity()
         self.world.add_component(self.fps_entity, TextEntity("FPS: 0", 1.0, 1.0, 0.1, (0.0, 1.0, 0.0, 1.0)))
         self.world.add_component(self.fps_entity, FPSCounter(timer=0.0, time_to_update=1.0))
+        
+        self.role_entity = self.world.create_entity()
+        self.world.add_component(self.role_entity, TextEntity(
+            text="",
+            x=RENDER_WIDTH / 2,
+            y=10.0,
+            size=0.5,
+            color=(1.0, 1.0, 1.0, 1.0),
+            alignment="center"
+        ))
 
     def create_vent(self, x: int, y: int, is_active: bool, orientation: VentOrientation):
         vent_center_x, vent_center_y = float(x) + 0.5, float(y) + 0.5
@@ -157,15 +168,22 @@ class GameplayScene(Scene):
         for p in getattr(self, "_temp_players", []):
             if p["id"] == self.my_player_id:
                 self.player_entity = p["entity_id"]
+                self.my_role = p.get("role")
                 self.world.add_component(self.player_entity, PlayerController())
                 
                 sprite = self.world.get_component(self.player_entity, Sprite)
                 if sprite:
                     sprite.is_visible = False
                     
+        self._update_role_hud()
         self.renderer.set_cursor_locked(True)
 
     def on_exit(self):
+        if getattr(self, "udp_socket", None):
+            try:
+                self.udp_socket.close()
+            except:
+                pass
         self.renderer.set_cursor_locked(False)
 
     def update(self, delta_time: float):
@@ -192,6 +210,8 @@ class GameplayScene(Scene):
 
     def _recv_udp(self):
         """Prijmi game_state pakety cez UDP. Spracuj len najnovší (podľa tick čísla)."""
+        if not self.udp_socket:
+            return
         latest_msg = None
         while True:
             try:
@@ -331,7 +351,14 @@ class GameplayScene(Scene):
                 self._handle_disconnect()
                 
     def _update_role_hud(self):
-        pass
+        text_comp = self.world.get_component(self.role_entity, TextEntity)
+        if text_comp and self.my_role:
+            if self.my_role == "seeker":
+                text_comp.text = "SEEKER"
+                text_comp.color = (1.0, 0.2, 0.2, 1.0)  # červená
+            else:
+                text_comp.text = "RUNNER"
+                text_comp.color = (0.2, 1.0, 0.2, 1.0)  # zelená
 
     def draw(self, encoder, target_view):
         # Synchronizácia mapy na GPU
