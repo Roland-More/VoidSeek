@@ -140,3 +140,12 @@ class NetworkPlayer:
     client_id: int
     name: str
     is_ready: bool = False
+
+@dataclass
+class NetworkIdentity:
+    player_id: int
+    role: str
+
+@dataclass
+class RemotePlayer:
+    player_id: int
