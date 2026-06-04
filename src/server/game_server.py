@@ -7,9 +7,10 @@ import random
 from game.ecs import World
 from game.components import ServerConfig, NetworkPlayer, Position, Rotation, Velocity, NetworkIdentity
 from shared.protocol import encode_message, decode_messages, encode_udp, decode_udp
+import numpy as np
 from game.map import MapManager
-from game.definitions import VentOrientation
-from game.systems import _is_wall
+from game.definitions import VentOrientation, VENT_OFFSET, PLAYER_RADIUS
+from game.systems import _is_wall, _dda_raycast
 
 # Ak by bolo potrebné Position z components
 try:
@@ -237,6 +238,7 @@ class GameServer:
             
         # 3. Zozbieranie dát o ventoch
         vents_data = []
+        self.vents = []
         for y, row in enumerate(layout):
             for x, char in enumerate(row):
                 if char == 'V':
@@ -246,6 +248,22 @@ class GameServer:
                             "x": float(x) + 0.5,
                             "y": float(y) + 0.5,
                             "orientation": orientation.value
+                        })
+                        
+                        vx, vy = float(x) + 0.5, float(y) + 0.5
+                        dest1, dest2 = None, None
+                        if orientation == VentOrientation.VERTICAL:
+                            dest1 = (vx, vy - 0.5 - PLAYER_RADIUS - VENT_OFFSET)
+                            dest2 = (vx, vy + 0.5 + PLAYER_RADIUS + VENT_OFFSET)
+                        elif orientation == VentOrientation.HORIZONTAL:
+                            dest1 = (vx - 0.5 - PLAYER_RADIUS - VENT_OFFSET, vy)
+                            dest2 = (vx + 0.5 + PLAYER_RADIUS + VENT_OFFSET, vy)
+                        
+                        self.vents.append({
+                            "x": vx, "y": vy,
+                            "is_open": True, "timer": 0.0,
+                            "orientation": orientation,
+                            "destinations": (dest1, dest2)
                         })
 
         # 4. Zostavenie inicializačného balíčka a rozposlanie
@@ -275,6 +293,45 @@ class GameServer:
                 client.socket.sendall(encode_message({"type": "role_assign", "role": role}))
             except Exception:
                 pass
+
+    def _handle_vent_request(self, client):
+        pos = self.world.get_component(client.player_entity, Position)
+        rot = self.world.get_component(client.player_entity, Rotation)
+        if not pos or not rot:
+            return
+
+        # Raycast smerom pohľadu
+        dir_x = math.cos(rot.angle)
+        dir_y = math.sin(rot.angle)
+        walls_arr = np.array(self.map_manager.walls, dtype=np.int32)
+        hit_mx, hit_my, hit_dist = _dda_raycast(
+            pos.x, pos.y, dir_x, dir_y,
+            walls_arr, 8, 8, 1.5  # INTERACT_DISTANCE
+        )
+
+        if hit_mx < 0 or hit_my < 0:
+            return
+
+        # Nájdi vent na danej pozícii
+        for vent in self.vents:
+            vx_tile = int(vent["x"] - 0.5)
+            vy_tile = int(vent["y"] - 0.5)
+            if vx_tile == hit_mx and vy_tile == hit_my and vent["is_open"]:
+                # Teleportuj hráča
+                d1, d2 = vent["destinations"]
+                dist1 = math.sqrt((pos.x - d1[0])**2 + (pos.y - d1[1])**2)
+                dist2 = math.sqrt((pos.x - d2[0])**2 + (pos.y - d2[1])**2)
+                if dist1 < dist2:
+                    pos.x, pos.y = d2[0], d2[1]
+                else:
+                    pos.x, pos.y = d1[0], d1[1]
+
+                vent["is_open"] = False
+                vent["timer"] = 0.0
+
+                # Broadcastni vent_update cez TCP
+                self.broadcast({"type": "vent_update", "vent_x": vent["x"], "vent_y": vent["y"], "is_open": False})
+                break
 
     def _disconnect_client(self, client: ClientConnection):
         if client in self.clients:
@@ -408,6 +465,20 @@ class GameServer:
                                 self.game_udp_socket.sendto(raw, client.udp_address)
                             except BlockingIOError:
                                 pass
+                                
+                    for client in list(self.clients):
+                        for req in client.pending_requests:
+                            if req.get("action") == "vent_use":
+                                self._handle_vent_request(client)
+                        client.pending_requests.clear()
+                        
+                    for vent in self.vents:
+                        if not vent["is_open"]:
+                            vent["timer"] += tick_duration
+                            if vent["timer"] >= config.vent_open_time:
+                                vent["is_open"] = True
+                                vent["timer"] = 0.0
+                                self.broadcast({"type": "vent_update", "vent_x": vent["x"], "vent_y": vent["y"], "is_open": True})
                                 
                     self.current_tick += 1
                 

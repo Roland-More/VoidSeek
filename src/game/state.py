@@ -224,7 +224,23 @@ class GameplayScene(Scene):
                     self.my_role = msg.get("role")
                     self._update_role_hud()
                 elif msg_type == "vent_update":
-                    pass  # implementujeme v prompte 5
+                    vent_x = msg.get("vent_x")
+                    vent_y = msg.get("vent_y")
+                    is_open = msg.get("is_open")
+                    
+                    for entity, (pos, vent_comp) in self.world.get_components(Position, Vent):
+                        if abs(pos.x - vent_x) < 0.1 and abs(pos.y - vent_y) < 0.1:
+                            vent_comp.is_open = is_open
+                            vent_comp.timer = 0.0
+                            animator = self.world.get_component(entity, TextureAnimator)
+                            if animator:
+                                if is_open:
+                                    animator.current_animation = ("Vent", VentAnim.OPENING)
+                                else:
+                                    animator.current_animation = ("Vent", VentAnim.CLOSING)
+                                animator.playback_state = PlaybackState.PLAYING
+                                animator.current_frame = 0
+                                animator.timer = 0.0
         except BlockingIOError:
             pass
         except (ConnectionResetError, OSError):
@@ -250,24 +266,39 @@ class GameplayScene(Scene):
             pass
 
     def _apply_game_state(self, msg):
-        """Aplikuj server game_state – aktualizuj pozície a rotácie všetkých hráčov."""
+        """Aplikuj server game_state – aktualizuj pozície, rotácie a existenciu hráčov."""
+        players_in_msg = set()
+        
         for p in msg.get("players", []):
             pid = p["id"]
+            players_in_msg.add(pid)
             entity = self.network_entities.get(pid)
+            
             if entity is None:
-                continue
-            pos = self.world.get_component(entity, Position)
-            rot = self.world.get_component(entity, Rotation)
-            if pos and rot:
-                if pid == self.my_player_id:
-                    # SERVER RECONCILIATION
+                # Nový hráč (pripojil sa počas hry)
+                entity = self.world.create_entity()
+                self.world.add_component(entity, Position(p["x"], p["y"]))
+                self.world.add_component(entity, Rotation(angle=p.get("angle", math.pi / 2.0)))
+                # Vzdialený hráč je vždy viditeľný
+                self.world.add_component(entity, Sprite(z=0.0, scale=1.0, is_visible=True, atlas_index_front=1, atlas_index_back=3))
+                self.world.add_component(entity, NetworkIdentity(player_id=pid, role=p.get("role", "runner")))
+                self.network_entities[pid] = entity
+            else:
+                # Aktualizuj existujúceho hráča
+                pos = self.world.get_component(entity, Position)
+                rot = self.world.get_component(entity, Rotation)
+                if pos and rot:
                     pos.x = p["x"]
                     pos.y = p["y"]
                     rot.angle = p["angle"]
-                else:
-                    pos.x = p["x"]
-                    pos.y = p["y"]
-                    rot.angle = p["angle"]
+                    
+        # Detekcia odpojených hráčov
+        disconnected_pids = [pid for pid in self.network_entities if pid not in players_in_msg]
+        for pid in disconnected_pids:
+            if pid != self.my_player_id:
+                entity = self.network_entities[pid]
+                self.world.destroy_entity(entity)
+                del self.network_entities[pid]
 
     def _handle_disconnect(self):
         """Ošetrenie odpojenia od servera."""
@@ -282,8 +313,23 @@ class GameplayScene(Scene):
         self.scene_manager.switch_to("server_list")
 
     def _send_vent_request(self):
-        pass  # implementujeme v prompte 5
-        
+        """Pošli vent request na server cez TCP."""
+        if not self.tcp_socket:
+            return
+        pos = self.world.get_component(self.player_entity, Position)
+        rot = self.world.get_component(self.player_entity, Rotation)
+        if pos and rot:
+            request = {
+                "type": "player_request",
+                "action": "vent_use",
+                "px": pos.x, "py": pos.y,
+                "angle": rot.angle
+            }
+            try:
+                self.tcp_socket.sendall(encode_message(request))
+            except OSError:
+                self._handle_disconnect()
+                
     def _update_role_hud(self):
         pass
 
