@@ -3,9 +3,9 @@ import array
 import ctypes
 from enum import Enum, auto
 
-MAX_MAP_WIDTH = 96
-MAX_MAP_HEIGHT = 96
-MAX_MAP_TILES = 9216
+MAX_MAP_WIDTH = 128
+MAX_MAP_HEIGHT = 128
+MAX_MAP_TILES = 16384
 TILE_SIZE = 64
 user32 = ctypes.windll.user32
 RENDER_WIDTH, RENDER_HEIGHT = user32.GetSystemMetrics(0) // 4, user32.GetSystemMetrics(1) // 4

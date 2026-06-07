@@ -110,11 +110,12 @@ class ClientConnection:
         self.udp_address = None
 
 class GameServer:
-    def __init__(self, name: str, tcp_port: int, udp_port: int, max_players: int):
+    def __init__(self, name: str, tcp_port: int, udp_port: int, max_players: int, map_size: int = 96):
         self.name = name
         self.tcp_port = tcp_port
         self.udp_port = udp_port
         self.max_players = max_players
+        self.map_size = map_size
 
         self.world = World()
         self.config_entity = self.world.create_entity()
@@ -228,6 +229,7 @@ class GameServer:
                         "tcp_port": self.tcp_port,
                         "players": len(self.clients),
                         "max_players": self.max_players,
+                        "map_size": self.map_size,
                         "state": self.state
                     }
                     message = json.dumps(payload).encode("utf-8")
@@ -353,7 +355,8 @@ class GameServer:
 
         from game.components import Portal
         for portal_ent, (p_pos, portal) in self.world.get_components(Position, Portal):
-            if math.dist((pos.x, pos.y), (p_pos.x, p_pos.y)) < 0.45:
+            # Zväčšený threshold – pozícia sa môže mierne líšiť kvôli latencie TCP vs UDP
+            if math.dist((pos.x, pos.y), (p_pos.x, p_pos.y)) < 0.55:
                 if not portal.is_open:
                     if getattr(client, 'has_key', False):
                         portal.is_open = True
@@ -408,11 +411,13 @@ class GameServer:
         self.map_manager = MapManager()
 
         import os
-        maps_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "maps.json")
+        maps_filename = f"maps_{self.map_size}.json"
+        maps_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), maps_filename)
         try:
             with open(maps_path, "r") as f:
                 all_maps = json.load(f)
             original_layout = random.choice(all_maps)
+            print(f"[Game] Na\u010d\u00edtan\u00e1 mapa {self.map_size}x{self.map_size} z {maps_filename}")
         except Exception as e:
             print(f"Chyba pri načítaní máp: {e}")
             original_layout = [
@@ -466,17 +471,42 @@ class GameServer:
 
         num_items = num_runners + 1
         
-        selected_keys = key_spawns[:num_items]
+        # Zozbieraj použité pozície aby sa spawny neprekrývali
+        used_positions = set()
+        for sx, sy in runner_spawns:
+            used_positions.add((int(sx - 0.5), int(sy - 0.5)))
+        for sx, sy in seeker_spawns:
+            used_positions.add((int(sx - 0.5), int(sy - 0.5)))
+        
+        # Vyber kľúče z dostupných, ktoré nie sú obsadené
+        available_keys = [pos for pos in key_spawns if pos not in used_positions]
+        selected_keys = []
+        for pos in available_keys[:num_items]:
+            selected_keys.append(pos)
+            used_positions.add(pos)
         needed_keys = num_items - len(selected_keys)
         for _ in range(needed_keys):
-            if empty_spaces:
-                selected_keys.append(empty_spaces.pop())
+            while empty_spaces:
+                candidate = empty_spaces.pop()
+                if candidate not in used_positions:
+                    selected_keys.append(candidate)
+                    used_positions.add(candidate)
+                    break
                 
-        selected_portals = portal_spawns[:num_items]
+        # Vyber portály z dostupných, ktoré nie sú obsadené
+        available_portals = [pos for pos in portal_spawns if pos not in used_positions]
+        selected_portals = []
+        for pos in available_portals[:num_items]:
+            selected_portals.append(pos)
+            used_positions.add(pos)
         needed_portals = num_items - len(selected_portals)
         for _ in range(needed_portals):
-            if empty_spaces:
-                selected_portals.append(empty_spaces.pop())
+            while empty_spaces:
+                candidate = empty_spaces.pop()
+                if candidate not in used_positions:
+                    selected_portals.append(candidate)
+                    used_positions.add(candidate)
+                    break
 
         layout = []
         for y, row in enumerate(original_layout):
@@ -607,29 +637,27 @@ class GameServer:
             except Exception:
                 pass
 
-    def _handle_vent_request(self, client):
+    def _handle_vent_request(self, client, req):
         if getattr(client, 'assigned_role', 'runner') == "seeker":
             return
         pos = self.world.get_component(client.player_entity, Position)
-        rot = self.world.get_component(client.player_entity, Rotation)
-        if not pos or not rot:
+        if not pos:
             return
 
-        dir_x = math.cos(rot.angle)
-        dir_y = math.sin(rot.angle)
-        walls_arr = self.map_manager.walls
-        hit_mx, hit_my, hit_dist = _dda_raycast(
-            pos.x, pos.y, dir_x, dir_y,
-            walls_arr, self.map_manager.width, self.map_manager.height, 1.5
-        )
-
-        if hit_mx < 0 or hit_my < 0:
+        vent_x = req.get("vent_x")
+        vent_y = req.get("vent_y")
+        
+        if vent_x is None or vent_y is None:
             return
 
         for vent in self.vents:
             vx_tile = int(vent["x"] - 0.5)
             vy_tile = int(vent["y"] - 0.5)
-            if vx_tile == hit_mx and vy_tile == hit_my and vent["is_open"]:
+            if vx_tile == vent_x and vy_tile == vent_y and vent["is_open"]:
+                dist_to_vent = math.sqrt((pos.x - vent["x"])**2 + (pos.y - vent["y"])**2)
+                if dist_to_vent > 1.5:
+                    continue
+                    
                 d1, d2 = vent["destinations"]
                 dist1 = math.sqrt((pos.x - d1[0])**2 + (pos.y - d1[1])**2)
                 dist2 = math.sqrt((pos.x - d2[0])**2 + (pos.y - d2[1])**2)
@@ -734,7 +762,7 @@ class GameServer:
                     self.broadcast({"type": "player_attack", "player_id": client.client_id})
                     self._handle_attack(client)
                 elif action == "vent_use":
-                    self._handle_vent_request(client)
+                    self._handle_vent_request(client, req)
                 elif action == "interact_portal":
                     self._handle_interact_portal(client)
 
@@ -747,6 +775,7 @@ class GameServer:
         print(f" -> TCP Port: {self.tcp_port}")
         print(f" -> UDP Broadcast Port: {self.udp_port}")
         print(f" -> Lokálna IP: {self.local_ip}")
+        print(f" -> Veľkosť mapy: {self.map_size}x{self.map_size}")
 
         config = self.world.get_component(self.config_entity, ServerConfig)
         tick_duration = 1.0 / config.tick_rate
@@ -776,14 +805,19 @@ class GameServer:
 
                     self._process_pending_requests(tick_duration)
 
+                    picked_key_entities: set[int] = set()
                     for client in self.clients:
                         if not getattr(client, 'is_dead', False) and not getattr(client, 'escaped', False) and getattr(client, 'assigned_role', '') == 'runner' and not getattr(client, 'has_key', False):
                             pos = self.world.get_component(client.player_entity, Position)
                             if pos:
                                 from game.components import Key
                                 for key_ent, (k_pos, key_comp) in self.world.get_components(Position, Key):
+                                    # Preskočíme kľúče, ktoré boli zdvihnuté iným hráčom v tomto tiku
+                                    if key_ent in picked_key_entities:
+                                        continue
                                     if math.dist((pos.x, pos.y), (k_pos.x, k_pos.y)) < 0.45:
                                         client.has_key = True
+                                        picked_key_entities.add(key_ent)
                                         self.world.destroy_entity(key_ent)
                                         try:
                                             client.socket.sendall(encode_message({"type": "key_picked"}))

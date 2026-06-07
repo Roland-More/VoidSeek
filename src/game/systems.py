@@ -6,8 +6,6 @@ from .components import Position, Rotation, Velocity, PlayerController, Sprite, 
 from .input import InputState
 
 TILE_SIZE = 64
-MAX_MAP_WIDTH = 96
-MAX_MAP_HEIGHT = 96
 
 # =============================================================================
 # Numba-optimalizované matematické funkcie
@@ -99,7 +97,7 @@ class PlayerInputSystem:
 
 class MovementSystem:
     @staticmethod
-    def update(world: World, delta_time: float, walls_arr, inp: InputState, player_radius: float):
+    def update(world: World, delta_time: float, map_manager, inp: InputState, player_radius: float):
         for entity_id, (pos, rot, vel, ctrl) in world.get_components(Position, Rotation, Velocity, PlayerController):
             move_x = 0.0
             move_y = 0.0
@@ -129,10 +127,10 @@ class MovementSystem:
                 move_x = (move_x / magnitude) * vel.speed * delta_time
                 move_y = (move_y / magnitude) * vel.speed * delta_time
 
-                if not _is_wall(pos.x + move_x, pos.y, walls_arr, MAX_MAP_WIDTH, MAX_MAP_HEIGHT, player_radius):
+                if not _is_wall(pos.x + move_x, pos.y, map_manager.walls, map_manager.width, map_manager.height, player_radius):
                     pos.x += move_x
                 
-                if not _is_wall(pos.x, pos.y + move_y, walls_arr, MAX_MAP_WIDTH, MAX_MAP_HEIGHT, player_radius):
+                if not _is_wall(pos.x, pos.y + move_y, map_manager.walls, map_manager.width, map_manager.height, player_radius):
                     pos.y += move_y
 
 class SpriteSystem:
@@ -208,7 +206,7 @@ class AnimatorSystem:
 
 class InteractSystem:
     @staticmethod
-    def update(world: World, input_state: InputState, player_entity, walls_arr, interact_distance: float):
+    def update(world: World, input_state: InputState, player_entity, map_manager, interact_distance: float):
         if not input_state.interact or player_entity is None:
             return
         input_state.interact = False
@@ -224,7 +222,7 @@ class InteractSystem:
 
         hit_mx, hit_my, hit_dist = _dda_raycast(
             player_x, player_y, dir_x, dir_y,
-            walls_arr, MAX_MAP_WIDTH, MAX_MAP_HEIGHT, interact_distance
+            map_manager.walls, map_manager.width, map_manager.height, interact_distance
         )
 
         entity_hit = None

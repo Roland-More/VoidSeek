@@ -35,8 +35,7 @@ class GameplayScene(Scene):
         self.attack_queue = []
         self.target_positions = {}
         self.target_angles = {}
-        self.server_pos = None  # Posledná potvrdená serverová pozícia
-        self.correction_blend = 0.0  # 0 = client, 1 = plne korigovaný
+        self._missing_ticks: dict[int, int] = {}  # pid -> počet tickov bez správy
         
         # Vytvor UDP socket
         self.udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -61,10 +60,14 @@ class GameplayScene(Scene):
         self.vent_open_time = config["vent_open_time"]
 
         self.map_manager = MapManager()
+        self.map_manager.width = init_data["map"].get("width", 64)
+        self.map_manager.height = init_data["map"].get("height", 64)
         self.map_manager.load_from_layout(init_data["map"]["layout"])
+        self.renderer.update_map_settings(self.map_manager.width, self.map_manager.height, 64, 5)
 
         self.my_player_id = None
         self.player_entity = None
+        self.key_entities_3d: list = []  # Všetky 3D kľúče na scéne
 
         # Vytvor hráčov
         for p in init_data["players"]:
@@ -103,8 +106,10 @@ class GameplayScene(Scene):
                     self.world.add_component(key_ent, Position(float(x) + 0.5, float(y) + 0.5))
                     self.world.add_component(key_ent, Rotation(angle=0.0))
                     self.world.add_component(key_ent, Sprite(is_visible=True, atlas_index_front=50, atlas_index_back=50))
-                    # Store it to destroy later when picked up
-                    self.key_entity_3d = key_ent
+                    # Sledujeme všetky kľúče v zozname (nie len posledný)
+                    if not hasattr(self, 'key_entities_3d'):
+                        self.key_entities_3d = []
+                    self.key_entities_3d.append(key_ent)
 
         self.fps_entity = self.world.create_entity()
         self.world.add_component(self.fps_entity, TextEntity("FPS: 0", 1.0, 1.0, 0.1, (0.0, 1.0, 0.0, 1.0)))
@@ -411,12 +416,13 @@ class GameplayScene(Scene):
         if not getattr(self, 'is_dead', False):
             # 2. LOKÁLNA PREDIKCIA pohybu
             PlayerInputSystem.update(self.world, input_to_system)
-            MovementSystem.update(self.world, delta_time, self.map_manager.walls, input_to_system, self.player_radius)
+            MovementSystem.update(self.world, delta_time, self.map_manager, input_to_system, self.player_radius)
             
             # 3. ODOŠLI input na server cez UDP
             self._send_input_udp(input_to_system)
             
-            # UI pre vent
+            # UI pre vent / portal
+            ui_text = ""  # vždy definovaná, aj pre seekera
             if getattr(self, 'my_role', 'runner') != "seeker":
                 pos = self.world.get_component(self.player_entity, Position)
                 rot = self.world.get_component(self.player_entity, Rotation)
@@ -427,13 +433,19 @@ class GameplayScene(Scene):
                         self.map_manager.walls, self.map_manager.width, self.map_manager.height, self.player_reach
                     )
                     
-                    ui_text = ""
                     portal_interact = False
                     
                     if self.portal_pos:
                         dist_to_portal = math.dist((pos.x, pos.y), self.portal_pos)
-                        if dist_to_portal < 0.45:
-                            if not self.is_portal_open and getattr(self, 'has_key', False):
+                        # Použij aj raycast – ak runner mieri priamo na portálový tile,
+                        # detekuj ho aj keď stred tilu je mierne ďalej (napr. pri rohu).
+                        portal_tile_x = int(self.portal_pos[0])
+                        portal_tile_y = int(self.portal_pos[1])
+                        portal_in_sight = (
+                            hit_mx == portal_tile_x and hit_my == portal_tile_y
+                        )
+                        if dist_to_portal < 0.55 or portal_in_sight:
+                            if not self.is_portal_open and self.has_key:
                                 ui_text = "Press E to unlock door"
                                 portal_interact = True
                             elif self.is_portal_open:
@@ -445,26 +457,27 @@ class GameplayScene(Scene):
                             if int(v_pos.x) == int(hit_mx) and int(v_pos.y) == int(hit_my):
                                 if vent_comp.is_open:
                                     ui_text = "Press E to vent"
+                                    self.last_hit_vent = (int(hit_mx), int(hit_my))
                                 else:
                                     time_left = max(0, vent_comp.time_to_open - vent_comp.timer)
                                     ui_text = f"Wait {int(round(time_left))}s"
                                 break
                                 
-                    if not hasattr(self, 'interaction_text_entity'):
-                        self.interaction_text_entity = self.world.create_entity()
-                        self.world.add_component(self.interaction_text_entity, TextEntity(
-                            text="", x=RENDER_WIDTH/2, y=RENDER_HEIGHT/2 + 50, size=0.4, color=(1.0, 1.0, 1.0, 1.0), alignment="center"
-                        ))
-                    text_comp = self.world.get_component(self.interaction_text_entity, TextEntity)
-                    if text_comp:
-                        text_comp.text = ui_text
+                if not hasattr(self, 'interaction_text_entity'):
+                    self.interaction_text_entity = self.world.create_entity()
+                    self.world.add_component(self.interaction_text_entity, TextEntity(
+                        text="", x=RENDER_WIDTH/2, y=RENDER_HEIGHT/2 + 50, size=0.4, color=(1.0, 1.0, 1.0, 1.0), alignment="center"
+                    ))
+                text_comp = self.world.get_component(self.interaction_text_entity, TextEntity)
+                if text_comp:
+                    text_comp.text = ui_text
                         
             # 4. Ak E stlačené → pošli player_request cez TCP
             if self.input.interact:
                 if ui_text == "Press E to unlock door" or ui_text == "Press E to enter":
                     self._send_portal_request()
-                elif ui_text == "Press E to vent":
-                    self._send_vent_request()
+                elif ui_text == "Press E to vent" and hasattr(self, 'last_hit_vent'):
+                    self._send_vent_request(self.last_hit_vent[0], self.last_hit_vent[1])
                 self.input.interact = False
         else:
             # Ak sme dead, môžeme aspoň vypísať koho spectatujeme do stredu dole
@@ -508,23 +521,6 @@ class GameplayScene(Scene):
                     while diff < -math.pi: diff += 2.0 * math.pi
                     rot.angle += diff * min(1.0, interp_speed * delta_time)
         
-        # Korekcia lokálneho hráča smerom k serveru (smooth blending)
-        if self.server_pos and self.player_entity and not getattr(self, 'is_dead', False):
-            pos = self.world.get_component(self.player_entity, Position)
-            if pos:
-                sx, sy = self.server_pos
-                dx = sx - pos.x
-                dy = sy - pos.y
-                dist_sq = dx * dx + dy * dy
-                if dist_sq > 0.25:  # > 0.5 blokov = snap
-                    pos.x = sx
-                    pos.y = sy
-                elif dist_sq > 0.0004:  # > 0.02 blokov = plynulá korekcia
-                    correction_speed = 5.0
-                    t = min(1.0, correction_speed * delta_time)
-                    pos.x += dx * t
-                    pos.y += dy * t
-
         # 5. Ostatné systémy
         AnimatorSystem.update(self.world, delta_time, self.map_manager)
         VentSystem.update(self.world, delta_time, self.vent_open_time)
@@ -611,20 +607,22 @@ class GameplayScene(Scene):
                 self.scene_manager.register("end_menu", EndMenuScene(self.renderer, self.scene_manager, init_data={"winner": winner, "my_role": getattr(self, 'my_role', 'runner')}))
                 self.scene_manager.switch_to("end_menu")
             elif msg_type == "key_removed":
-                if hasattr(self, 'key_entity_3d') and self.key_entity_3d is not None:
+                # Zmaž prvý zostávajúci kľúč zo zoznamu
+                if self.key_entities_3d:
+                    ent = self.key_entities_3d.pop(0)
                     try:
-                        self.world.destroy_entity(self.key_entity_3d)
+                        self.world.destroy_entity(ent)
                     except:
                         pass
-                    self.key_entity_3d = None
             elif msg_type == "key_picked":
                 self.has_key = True
-                if hasattr(self, 'key_entity_3d') and self.key_entity_3d is not None:
+                # Zmaž prvý zostávajúci kľúč zo zoznamu (ten čo sme zobrali)
+                if self.key_entities_3d:
+                    ent = self.key_entities_3d.pop(0)
                     try:
-                        self.world.destroy_entity(self.key_entity_3d)
+                        self.world.destroy_entity(ent)
                     except:
                         pass
-                    self.key_entity_3d = None
                 from game.components import UIPosition, UISprite
                 self.key_ui_entity = self.world.create_entity()
                 # Zobrazíme klúč vpravo hore
@@ -669,6 +667,7 @@ class GameplayScene(Scene):
                             animator.playback_state = PlaybackState.PLAYING
                             animator.current_frame = 0
                             animator.timer = 0.0
+                        break
 
     def _send_input_udp(self, inp=None):
         """Odošli aktuálny input na server cez UDP."""
@@ -715,9 +714,9 @@ class GameplayScene(Scene):
                 rot = self.world.get_component(entity, Rotation)
                 if pos and rot:
                     if pid == self.my_player_id:
-                        # Client-side prediction: server potvrdí pozíciu
-                        # Uložíme serverovú pozíciu – korekcia prebieha v update()
-                        self.server_pos = (p["x"], p["y"])
+                        # Server je autorita – priamo nastav pozíciu bez predikcie
+                        pos.x = p["x"]
+                        pos.y = p["y"]
                     else:
                         from .components import SpriteAnimator
                         
@@ -746,13 +745,23 @@ class GameplayScene(Scene):
                                     remote_sprite.atlas_index_front = 29 if p.get("role") == "seeker" else 30
                                     remote_sprite.atlas_index_back = 12 if p.get("role") == "seeker" else 31
                     
-        # Detekcia odpojených hráčov
-        disconnected_pids = [pid for pid in self.network_entities if pid not in players_in_msg]
-        for pid in disconnected_pids:
-            if pid != self.my_player_id:
-                entity = self.network_entities[pid]
-                self.world.destroy_entity(entity)
-                del self.network_entities[pid]
+        # Detekcia odpojených hráčov – tolerancia voči výpadku UDP paketu
+        # Hráč sa zmaže až po MISSING_TICKS_THRESHOLD po sebe idúcich chýbajúcich tickoch
+        MISSING_TICKS_THRESHOLD = 5
+        for pid in list(self.network_entities):
+            if pid == self.my_player_id:
+                continue
+            if pid not in players_in_msg:
+                self._missing_ticks[pid] = self._missing_ticks.get(pid, 0) + 1
+                if self._missing_ticks[pid] >= MISSING_TICKS_THRESHOLD:
+                    entity = self.network_entities[pid]
+                    self.world.destroy_entity(entity)
+                    del self.network_entities[pid]
+                    self._missing_ticks.pop(pid, None)
+                    self.target_positions.pop(pid, None)
+                    self.target_angles.pop(pid, None)
+            else:
+                self._missing_ticks.pop(pid, None)
 
     def _handle_disconnect(self):
         """Ošetrenie odpojenia od servera."""
@@ -770,8 +779,7 @@ class GameplayScene(Scene):
             
         self.scene_manager.switch_to("server_list")
 
-    def _send_vent_request(self):
-        """Pošli vent request na server cez TCP."""
+    def _send_vent_request(self, vent_x, vent_y):
         if getattr(self, 'my_role', 'runner') == "seeker":
             return
         if not self.tcp_socket:
@@ -783,6 +791,8 @@ class GameplayScene(Scene):
             request = {
                 "type": "player_request",
                 "action": "vent_use",
+                "vent_x": vent_x,
+                "vent_y": vent_y,
                 "px": pos.x, "py": pos.y,
                 "angle": rot.angle
             }

@@ -13,6 +13,7 @@ def main():
     parser.add_argument("--tcp-port", type=int, default=7777, help="TCP port pre pripojenia")
     parser.add_argument("--udp-port", type=int, default=7778, help="UDP broadcast port")
     parser.add_argument("--max-players", type=int, default=4, help="Maximálny počet hráčov")
+    parser.add_argument("--map-size", type=int, default=32, choices=[32,64, 96], help="Veľkosť mapy (64 alebo 96)")
     
     args = parser.parse_args()
     
@@ -20,7 +21,8 @@ def main():
         name=args.name,
         tcp_port=args.tcp_port,
         udp_port=args.udp_port,
-        max_players=args.max_players
+        max_players=args.max_players,
+        map_size=args.map_size
     )
     
     server.run()
