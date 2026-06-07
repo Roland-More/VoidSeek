@@ -86,12 +86,20 @@ class Renderer:
         )
         self.atlas_resources = AtlasResources(atlas_bind_group, atlas_view)
 
-        # =====================================================================
-        # Inicializácia Atlasu pre Sprity
-        # =====================================================================
         atlas_sprite_texture = self._create_atlas_texture(
             self.device, self.queue, wgpu.TextureFormat.rgba8unorm_srgb, 
-            ["Sprite-bg.png", "Sprite-no-bg.png", "Sprite-bg-back.png", "Sprite-no-bg-back.png"]
+            ["Sprite-bg.png", "Sprite-no-bg.png", "Sprite-bg-back.png", "Sprite-no-bg-back.png",
+            "Enemy-back-walking-0.png", "Enemy-back-walking-1.png", "Enemy-back-walking-2.png", "Enemy-back-walking-3.png",
+            "Enemy-back-walking-4.png", "Enemy-back-walking-5.png", "Enemy-back-walking-6.png", "Enemy-back-walking-7.png",
+            "Enemy-back.png", "Enemy-front-attack-0.png", "Enemy-front-attack-1.png", "Enemy-front-attack-2.png", "Enemy-front-attack-3.png",
+            "Enemy-front-attack-4.png", "Enemy-front-attack-5.png", "Enemy-front-attack-6.png", "Enemy-front-attack-7.png",
+            "Enemy-front-walking-0.png", "Enemy-front-walking-1.png", "Enemy-front-walking-2.png", "Enemy-front-walking-3.png",
+            "Enemy-front-walking-4.png", "Enemy-front-walking-5.png", "Enemy-front-walking-6.png", "Enemy-front-walking-7.png",
+            "Enemy-front.png", "Player-front.png", "Player-back.png", "Player-front-walking-0.png", "Player-front-walking-1.png",
+            "Player-front-walking-2.png", "Player-front-walking-3.png", "Player-front-walking-4.png", "Player-front-walking-5.png",
+            "Player-front-walking-6.png", "Player-front-walking-7.png", "Player-back-walking-0.png", "Player-back-walking-1.png",
+            "Player-back-walking-2.png", "Player-back-walking-3.png", "Player-back-walking-4.png", "Player-back-walking-5.png",
+            "Player-back-walking-6.png", "Player-back-walking-7.png", "Door-locked.png", "Door-opened.png","Key.png"]
         )
         atlas_sprite_view = atlas_sprite_texture.create_view(
             label="Sprite Texture Array View",
@@ -245,13 +253,27 @@ class Renderer:
         self.ui_resources = UIInstanceResources(ui_bind_group, self.ui_buffer)
         self.ui_element_count = 0
 
-        # Register scenes
+        self.ui_sprite_buffer = self.device.create_buffer(
+            label="UI Sprite Instances Buffer",
+            size=self.ui_max_elements * 64,
+            usage=wgpu.BufferUsage.STORAGE | wgpu.BufferUsage.COPY_DST
+        )
+        ui_sprite_bind_group = self.device.create_bind_group(
+            label="UI Sprite Instances Bind Group",
+            layout=self.bind_group_layouts[BindScope.UISpriteInstances],
+            entries=[{"binding": 0, "resource": {"buffer": self.ui_sprite_buffer, "offset": 0, "size": self.ui_sprite_buffer.size}}]
+        )
+        self.ui_sprite_resources = UIInstanceResources(ui_sprite_bind_group, self.ui_sprite_buffer)
+        self.ui_sprite_element_count = 0
+
         self.scene_manager.network_client = None
         self.scene_manager.register("menu", MenuScene(self, self.scene_manager))
         from game.server_list import ServerListScene
         self.scene_manager.register("server_list", ServerListScene(self, self.scene_manager))
         from game.room import RoomScene
         self.scene_manager.register("room", RoomScene(self, self.scene_manager))
+        from game.end_menu import EndMenuScene
+        self.scene_manager.register("end_menu", EndMenuScene(self, self.scene_manager))
         self.scene_manager.switch_to("menu")
         if hasattr(self.scene_manager.current_scene, "start"):
             self.scene_manager.current_scene.start()
@@ -271,7 +293,6 @@ class Renderer:
         self.canvas.add_event_handler(self.on_pointer_up, "pointer_up")
         self.canvas.add_event_handler(self.on_wheel, "wheel")
         
-        # Register glfw char callback for real keyboard character mapping
         import glfw
         glfw.set_char_callback(self.canvas._window, self.on_char)
 
@@ -368,6 +389,14 @@ class Renderer:
         builder = BindGroupLayoutBuilder(device)
         builder.add_entry({
             "binding": 0,
+            "visibility": wgpu.ShaderStage.VERTEX,
+            "buffer": {"type": wgpu.BufferBindingType.read_only_storage}
+        })
+        layouts[BindScope.UISpriteInstances] = builder.build("UI Sprite Instances Layout")
+
+        builder = BindGroupLayoutBuilder(device)
+        builder.add_entry({
+            "binding": 0,
             "visibility": wgpu.ShaderStage.COMPUTE,
             "buffer": {"type": wgpu.BufferBindingType.uniform}
         })
@@ -393,7 +422,6 @@ class Renderer:
     def _build_render_pipelines(self, device, surface_format, offscreen_format, layouts):
         pipelines = {}
         
-        # Raycast
         raycast_builder = RenderPipelineBuilder(device)
         raycast_builder.set_shader_module("raycast_retro.wgsl", "vs_main", "fs_main")
         raycast_builder.set_pixel_format(offscreen_format)
@@ -403,7 +431,6 @@ class Renderer:
         raycast_builder.add_bind_group_layout(layouts[BindScope.RayHits])
         pipelines[RenderPipelineType.Raycast] = raycast_builder.build("Raycast Pipeline")
 
-        #Sprite
         sprite_builder = RenderPipelineBuilder(device)
         sprite_builder.set_shader_module("sprite.wgsl", "vs_main", "fs_main")
         sprite_builder.set_pixel_format(offscreen_format)
@@ -414,14 +441,12 @@ class Renderer:
         sprite_builder.add_bind_group_layout(layouts[BindScope.Map])
         pipelines[RenderPipelineType.Sprite] = sprite_builder.build("Sprite Pipeline")
 
-        # Blit
         blit_builder = RenderPipelineBuilder(device)
         blit_builder.set_shader_module("blit.wgsl", "vs_main", "fs_main")
         blit_builder.set_pixel_format(surface_format)
         blit_builder.add_bind_group_layout(layouts[BindScope.BlitTexture])
         pipelines[RenderPipelineType.Blit] = blit_builder.build("Blit Pipeline")
 
-        # Text
         text_builder = RenderPipelineBuilder(device)
         text_builder.set_shader_module("text.wgsl", "vs_main", "fs_main")
         text_builder.set_pixel_format(surface_format)
@@ -431,7 +456,6 @@ class Renderer:
         text_builder.add_bind_group_layout(layouts[BindScope.TextInstances])
         pipelines[RenderPipelineType.Text] = text_builder.build("Text Pipeline")
 
-        # UI
         ui_builder = RenderPipelineBuilder(device)
         ui_builder.set_shader_module("ui.wgsl", "vs_main", "fs_main")
         ui_builder.set_pixel_format(surface_format)
@@ -440,6 +464,15 @@ class Renderer:
         ui_builder.add_bind_group_layout(layouts[BindScope.FontAtlas])
         ui_builder.add_bind_group_layout(layouts[BindScope.UIInstances])
         pipelines[RenderPipelineType.UI] = ui_builder.build("UI Pipeline")
+
+        ui_sprite_builder = RenderPipelineBuilder(device)
+        ui_sprite_builder.set_shader_module("ui_sprite.wgsl", "vs_main", "fs_main")
+        ui_sprite_builder.set_pixel_format(surface_format)
+        ui_sprite_builder.enable_alpha_blend()
+        ui_sprite_builder.add_bind_group_layout(layouts[BindScope.Camera])
+        ui_sprite_builder.add_bind_group_layout(layouts[BindScope.AtlasTexture])
+        ui_sprite_builder.add_bind_group_layout(layouts[BindScope.UISpriteInstances])
+        pipelines[RenderPipelineType.UISprite] = ui_sprite_builder.build("UI Sprite Pipeline")
 
         return pipelines
 
@@ -498,15 +531,13 @@ class Renderer:
         elif key in ("backspace", "enter"):
             self.ui_key_queue.append(key)
             
-        if key == "escape":
-            self.canvas.close()
-        elif key == "p":
-            self.toggle_fullscreen()
-        elif key == "l":
-            self.toggle_mouse_lock()
-        else:
-            if self.scene_manager.current_scene:
-                self.scene_manager.current_scene.handle_key_down(key)
+        handled = False
+        if self.scene_manager.current_scene and hasattr(self.scene_manager.current_scene, "handle_key_down"):
+            handled = self.scene_manager.current_scene.handle_key_down(key)
+            
+        if not handled:
+            if key == "escape":
+                self.canvas.close()
 
     def on_key_up(self, event):
         key = event.get("key").lower()
@@ -517,7 +548,6 @@ class Renderer:
             self.scene_manager.current_scene.handle_key_up(key)
 
     def on_pointer_move(self, event):
-        # Použijeme logické rozmery plátna, v ktorých chodia aj samotné pointer eventy
         w, h = self.canvas.get_logical_size()
         
         evt_x = event.get("x")
@@ -539,8 +569,17 @@ class Renderer:
             self._last_mouse_x = None
 
     def on_pointer_down(self, event):
+        w, h = self.canvas.get_logical_size()
+        evt_x = event.get("x")
+        evt_y = event.get("y")
+        if evt_x is not None and evt_y is not None and w > 0 and h > 0:
+            self.mouse_x = evt_x * (RENDER_WIDTH / w)
+            self.mouse_y = evt_y * (RENDER_HEIGHT / h)
+            
         self.mouse_clicked = True
         self.mouse_pressed = True
+        if self.scene_manager.current_scene and hasattr(self.scene_manager.current_scene, "handle_pointer_down"):
+            self.scene_manager.current_scene.handle_pointer_down(event)
 
     def on_pointer_up(self, event):
         self.mouse_pressed = False
@@ -553,7 +592,6 @@ class Renderer:
             self.scene_manager.current_scene.handle_mouse_wheel(dy)
 
     def on_char(self, window, codepoint):
-        # Callback for real keyboard text input handling layout and shifts natively
         char = chr(codepoint)
         self.ui_key_queue.append(char)
 
@@ -655,21 +693,30 @@ class Renderer:
 
     def update_ui_buffers(self, world):
         from game.systems import UISpriteSystem
-        sprite_bytes, count = UISpriteSystem.update(world)
-        self.ui_element_count = min(count, self.ui_max_elements)
+        sprite_bytes, ui_count, ui_sprite_bytes, ui_sprite_count = UISpriteSystem.update(world)
         
+        self.ui_element_count = min(ui_count, self.ui_max_elements)
         if self.ui_element_count > 0:
             self.queue.write_buffer(self.ui_buffer, 0, sprite_bytes[:self.ui_element_count * 64])
+            
+        self.ui_sprite_element_count = min(ui_sprite_count, self.ui_max_elements)
+        if self.ui_sprite_element_count > 0:
+            self.queue.write_buffer(self.ui_sprite_buffer, 0, ui_sprite_bytes[:self.ui_sprite_element_count * 64])
 
     def render_ui(self, render_pass):
-        if self.ui_element_count == 0:
-            return
+        if self.ui_element_count > 0:
+            render_pass.set_pipeline(self.render_pipelines[RenderPipelineType.UI])
+            render_pass.set_bind_group(0, self.camera_resources.bind_group, [])
+            render_pass.set_bind_group(1, self.font_resources.bind_group, [])
+            render_pass.set_bind_group(2, self.ui_resources.bind_group, [])
+            render_pass.draw(6, self.ui_element_count, 0, 0)
             
-        render_pass.set_pipeline(self.render_pipelines[RenderPipelineType.UI])
-        render_pass.set_bind_group(0, self.camera_resources.bind_group, [])
-        render_pass.set_bind_group(1, self.font_resources.bind_group, [])
-        render_pass.set_bind_group(2, self.ui_resources.bind_group, [])
-        render_pass.draw(6, self.ui_element_count, 0, 0)
+        if self.ui_sprite_element_count > 0:
+            render_pass.set_pipeline(self.render_pipelines[RenderPipelineType.UISprite])
+            render_pass.set_bind_group(0, self.camera_resources.bind_group, [])
+            render_pass.set_bind_group(1, self.atlas_sprite_resources.bind_group, [])
+            render_pass.set_bind_group(2, self.ui_sprite_resources.bind_group, [])
+            render_pass.draw(6, self.ui_sprite_element_count, 0, 0)
 
     def draw_frame(self):
         current_time = time.perf_counter()
@@ -704,6 +751,12 @@ class Renderer:
         import glfw
         mode = glfw.CURSOR_DISABLED if locked else glfw.CURSOR_NORMAL
         glfw.set_input_mode(self.canvas._window, glfw.CURSOR, mode)
+        self._is_mouse_locked = locked
+        if locked and self.canvas._window:
+            x, _ = glfw.get_cursor_pos(self.canvas._window)
+            self._last_mouse_x = x
+        else:
+            self._last_mouse_x = None
 
     def render_menu_scene(self, command_encoder, current_texture_view):
         blit_pass = command_encoder.begin_render_pass(
@@ -730,7 +783,6 @@ class Renderer:
         blit_pass.end()
 
     def render_gameplay_scene(self, command_encoder, current_texture_view):
-        # 1. Compute Pass
         compute_pass = command_encoder.begin_compute_pass(label="Raycast Compute Pass")
         compute_pass.set_pipeline(self.compute_pipelines[ComputePipelineType.Raycast])
         compute_pass.set_bind_group(0, self.compute_bind_group, [])
@@ -738,7 +790,6 @@ class Renderer:
         compute_pass.dispatch_workgroups(dispatch_count, 1, 1)
         compute_pass.end()
 
-        # 2. Render Pass (do offscreen texture)
         render_pass = command_encoder.begin_render_pass(
             label="Raycast & Sprite Pass",
             color_attachments=[
@@ -751,7 +802,6 @@ class Renderer:
                 }
             ],
         )
-        # Vykreslenie 3D stien pomocou Raycastu
         render_pass.set_pipeline(self.render_pipelines[RenderPipelineType.Raycast])
         render_pass.set_bind_group(0, self.camera_resources.bind_group, [])
         render_pass.set_bind_group(1, self.map_resources.bind_group, [])
@@ -759,7 +809,6 @@ class Renderer:
         render_pass.set_bind_group(3, self.ray_hits_bind_group, [])
         render_pass.draw(3, 1, 0, 0)
 
-        #Vykreslenie všetkých inštancií spritov v rovnakom render passe
         if self.sprite_count > 0:
             render_pass.set_pipeline(self.render_pipelines[RenderPipelineType.Sprite])
             render_pass.set_bind_group(0, self.camera_resources.bind_group, [])
@@ -771,7 +820,6 @@ class Renderer:
 
         render_pass.end()
         
-        # 3. Blit Pass (kreslí na okno)
         blit_pass = command_encoder.begin_render_pass(
             label="Blit Pass",
             color_attachments=[
@@ -788,7 +836,8 @@ class Renderer:
         blit_pass.set_bind_group(0, self.blit_resources.bind_group, [])
         blit_pass.draw(3, 1, 0, 0)
         
-        # Vykreslenie textu
+        self.render_ui(blit_pass)
+
         if self.text_char_count > 0:
             blit_pass.set_pipeline(self.render_pipelines[RenderPipelineType.Text])
             blit_pass.set_bind_group(0, self.camera_resources.bind_group, [])
@@ -796,5 +845,4 @@ class Renderer:
             blit_pass.set_bind_group(2, self.text_resources.bind_group, [])
             blit_pass.draw(6, self.text_char_count, 0, 0)
 
-        self.render_ui(blit_pass)
         blit_pass.end()

@@ -24,7 +24,6 @@ class Builder:
             
             w, h = img.size
             if i == 0:
-                # Prvý obrázok nastaví referenčné rozmery
                 self.texture_width = w
                 self.texture_height = h
             else:

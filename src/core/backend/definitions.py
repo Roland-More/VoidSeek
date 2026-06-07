@@ -3,9 +3,9 @@ import array
 import ctypes
 from enum import Enum, auto
 
-MAX_MAP_WIDTH = 8
-MAX_MAP_HEIGHT = 8
-MAX_MAP_TILES = 64
+MAX_MAP_WIDTH = 96
+MAX_MAP_HEIGHT = 96
+MAX_MAP_TILES = 9216
 TILE_SIZE = 64
 user32 = ctypes.windll.user32
 RENDER_WIDTH, RENDER_HEIGHT = user32.GetSystemMetrics(0) // 4, user32.GetSystemMetrics(1) // 4
@@ -22,6 +22,7 @@ class BindScope(Enum):
     FontAtlas = auto()
     TextInstances = auto()
     UIInstances = auto()
+    UISpriteInstances = auto()
 
 class RenderPipelineType(Enum):
     Raycast = auto()
@@ -29,6 +30,7 @@ class RenderPipelineType(Enum):
     Sprite = auto()
     Text = auto()
     UI = auto()
+    UISprite = auto()
 
 class ComputePipelineType(Enum):
     Raycast = auto()

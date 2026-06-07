@@ -144,7 +144,7 @@ class ServerListScene(Scene):
             
         # Clean old servers
         current_time = time.time()
-        self.servers = [s for s in self.servers if current_time - s["last_seen"] < 15.0]
+        self.servers = [s for s in self.servers if current_time - s["last_seen"] < 6.0 and s.get("state", "lobby") == "lobby"]
         
         max_scroll = max(0, len(self.servers) - 5)
         self.scroll_offset = max(0, min(max_scroll, self.scroll_offset))

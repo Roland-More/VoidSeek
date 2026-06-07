@@ -4,7 +4,7 @@ from typing import Callable
 VENT_OFFSET = 0.15
 PLAYER_RADIUS = 0.15
 INTERACT_DISTANCE = 1.5
-TIME_TO_OPEN_VENT = 10.0
+TIME_TO_OPEN_VENT = 45.0
 
 class PlaybackState(Enum):
     PLAYING = 1

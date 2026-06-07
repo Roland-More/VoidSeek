@@ -120,27 +120,42 @@ class RoomScene(Scene):
                 return
                 
             self.recv_buffer += data
-            messages, self.recv_buffer = decode_messages(self.recv_buffer)
-            
-            for payload in messages:
-                if payload.get("type") == "player_list":
-                    self.players = payload.get("players", [])
-                    self._refresh_player_list()
-                elif payload.get("type") == "game_start":
-                    self.my_player_id = payload.get("your_id")
-                    print(f"Hra sa začína! Moje ID: {self.my_player_id}")
-                elif payload.get("type") == "game_init":
+        except BlockingIOError:
+            pass
+        except (ConnectionResetError, ConnectionAbortedError, OSError):
+            print("Spojenie stratené.")
+            self.disconnect()
+            return
+        
+        messages, self.recv_buffer = decode_messages(self.recv_buffer)
+        
+        for i, payload in enumerate(messages):
+            if payload.get("type") == "player_list":
+                self.players = payload.get("players", [])
+                self._refresh_player_list()
+            elif payload.get("type") == "game_start":
+                self.my_player_id = payload.get("your_id")
+                print(f"Hra sa začína! Moje ID: {self.my_player_id}")
+            elif payload.get("type") == "game_init":
+                try:
                     from game.state import GameplayScene
-                    gameplay = GameplayScene(self.renderer, self.scene_manager, payload, self.network_client)
+                    pending_msgs = messages[i+1:]
+                    gameplay = GameplayScene(
+                        self.renderer, 
+                        self.scene_manager, 
+                        payload, 
+                        self.network_client,
+                        pending_messages=pending_msgs,
+                        recv_buffer=self.recv_buffer
+                    )
                     gameplay.my_player_id = self.my_player_id
                     self.scene_manager.register("game", gameplay)
                     self.scene_manager.switch_to("game")
-                    
-        except BlockingIOError:
-            pass
-        except Exception as e:
-            print(f"Spojenie stratené: {e}")
-            self.disconnect()
+                except Exception as e:
+                    print(f"Chyba pri vytváraní hry: {e}")
+                    import traceback
+                    traceback.print_exc()
+                break
 
     def _refresh_player_list(self):
         for ent in self.player_entities:

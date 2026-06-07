@@ -16,6 +16,10 @@ class Velocity:
     dy: float = 0.0
 
 @dataclass
+class SphereCollider:
+    radius: float
+
+@dataclass
 class PlayerController:
     sensitivity: float = 0.0015
 
@@ -30,7 +34,7 @@ class Sprite:
 @dataclass
 class Interactible:
     enabled: bool = True
-    on_interact: callable = None # Referencia na funkciu/callback
+    on_interact: callable = None
 
 @dataclass
 class TextureAnimation:
@@ -100,6 +104,7 @@ class UISprite:
     color: tuple[float, float, float, float] = (1.0, 1.0, 1.0, 1.0)
     texture_id: int = -1
     use_texture: bool = False
+    atlas_index: int = -1
 
 @dataclass
 class UIButton:
@@ -149,3 +154,11 @@ class NetworkIdentity:
 @dataclass
 class RemotePlayer:
     player_id: int
+
+@dataclass
+class Key:
+    pass
+
+@dataclass
+class Portal:
+    is_open: bool = False

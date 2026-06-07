@@ -6,8 +6,8 @@ from .components import Position, Rotation, Velocity, PlayerController, Sprite, 
 from .input import InputState
 
 TILE_SIZE = 64
-MAX_MAP_WIDTH = 8
-MAX_MAP_HEIGHT = 8
+MAX_MAP_WIDTH = 96
+MAX_MAP_HEIGHT = 96
 
 # =============================================================================
 # Numba-optimalizované matematické funkcie
@@ -99,8 +99,7 @@ class PlayerInputSystem:
 
 class MovementSystem:
     @staticmethod
-    def update(world: World, delta_time: float, map_walls: list[int], inp: InputState, player_radius: float):
-        walls_arr = np.array(map_walls, dtype=np.int32)
+    def update(world: World, delta_time: float, walls_arr, inp: InputState, player_radius: float):
         for entity_id, (pos, rot, vel, ctrl) in world.get_components(Position, Rotation, Velocity, PlayerController):
             move_x = 0.0
             move_y = 0.0
@@ -162,20 +161,24 @@ class AnimatorSystem:
 
             animation = animator.animations.get(animator.current_animation)
             if animation:
+                # Clamp current_frame to valid range (prevents crash when switching animations)
+                if animator.current_frame >= len(animation.frames_front):
+                    animator.current_frame = 0
                 sprite.atlas_index_front = animation.frames_front[animator.current_frame]
                 sprite.atlas_index_back = animation.frames_back[animator.current_frame]
 
                 animator.timer += delta_time
                 if animator.timer >= animation.frame_duration:
-                    animator.timer -= animation.frame_duration
-                    next_frame = animator.current_frame + 1
+                    frames_to_advance = int(animator.timer / animation.frame_duration)
+                    animator.timer -= frames_to_advance * animation.frame_duration
+                    next_frame = animator.current_frame + frames_to_advance
 
                     if next_frame >= len(animation.frames_front):
                         if animation.playback_mode != PlaybackMode.LOOP:
                             animator.playback_state = PlaybackState.STOPPED
                             animator.current_frame = len(animation.frames_front) - 1
                         else:
-                            animator.current_frame = 0
+                            animator.current_frame = next_frame % len(animation.frames_front)
                     else:
                         animator.current_frame = next_frame
 
@@ -190,21 +193,22 @@ class AnimatorSystem:
 
                 animator.timer += delta_time
                 if animator.timer >= animation.frame_duration:
-                    animator.timer -= animation.frame_duration
-                    next_frame = animator.current_frame + 1
+                    frames_to_advance = int(animator.timer / animation.frame_duration)
+                    animator.timer -= frames_to_advance * animation.frame_duration
+                    next_frame = animator.current_frame + frames_to_advance
 
                     if next_frame >= len(animation.frames):
                         if animation.playback_mode != PlaybackMode.LOOP:
                             animator.playback_state = PlaybackState.STOPPED
                             animator.current_frame = len(animation.frames) - 1
                         else:
-                            animator.current_frame = 0
+                            animator.current_frame = next_frame % len(animation.frames)
                     else:
                         animator.current_frame = next_frame
 
 class InteractSystem:
     @staticmethod
-    def update(world: World, input_state: InputState, player_entity, map_walls: list[int], interact_distance: float):
+    def update(world: World, input_state: InputState, player_entity, walls_arr, interact_distance: float):
         if not input_state.interact or player_entity is None:
             return
         input_state.interact = False
@@ -218,7 +222,6 @@ class InteractSystem:
         dir_x = math.cos(rot.angle)
         dir_y = math.sin(rot.angle)
 
-        walls_arr = np.array(map_walls, dtype=np.int32)
         hit_mx, hit_my, hit_dist = _dda_raycast(
             player_x, player_y, dir_x, dir_y,
             walls_arr, MAX_MAP_WIDTH, MAX_MAP_HEIGHT, interact_distance
@@ -250,13 +253,7 @@ class VentSystem:
             if vent.is_open:
                 continue
             vent.timer += delta_time
-            if vent.timer >= vent_open_time:
-                vent.is_open = True
-                vent.timer = 0.0
-                animator.current_animation = ("Vent", VentAnim.OPENING)
-                animator.playback_state = PlaybackState.PLAYING
-                animator.current_frame = 0
-                animator.timer = 0.0
+            # Client doesn't open the vent, waits for vent_update from server
 
 class FPSSystem:
     @staticmethod
@@ -278,18 +275,22 @@ class UISystem:
         from .components import UIPosition, UISprite, UIButton, UITextInput, TextEntity
         
         # Spracovanie tlačidiel
+        clicked_actions = []
         for entity_id, (pos, btn) in world.get_components(UIPosition, UIButton):
             btn.is_hovered = (pos.x <= mouse_x <= pos.x + pos.width) and (pos.y <= mouse_y <= pos.y + pos.height)
             
-            if mouse_clicked and btn.is_hovered and btn.on_click:
-                btn.on_click()
-                
             world.add_component(entity_id, UISprite(color=btn.color_hover if btn.is_hovered else btn.color_normal, use_texture=False))
             
             char_height = 64 * btn.font_size
             text_x = pos.x + pos.width / 2
             text_y = pos.y + (pos.height - char_height) / 2
             world.add_component(entity_id, TextEntity(text=btn.text, x=text_x, y=text_y, size=btn.font_size, color=btn.text_color, alignment="center"))
+
+            if mouse_clicked and btn.is_hovered and btn.on_click:
+                clicked_actions.append(btn.on_click)
+                
+        for action in clicked_actions:
+            action()
 
         # Spracovanie textových vstupov
         for entity_id, (pos, text_input) in world.get_components(UIPosition, UITextInput):
@@ -333,7 +334,7 @@ class UISystem:
 
 class UISpriteSystem:
     @staticmethod
-    def update(world: World) -> tuple[bytearray, int]:
+    def update(world: World) -> tuple[bytearray, int, bytearray, int]:
         from .components import UIPosition, UISprite
         import struct
         
@@ -341,26 +342,36 @@ class UISpriteSystem:
         ui_elements = [(ui_pos, ui_sprite) for _, (ui_pos, ui_sprite) in ui_entities]
         ui_elements.sort(key=lambda item: item[0].z_index)
         
-        sprite_bytes = bytearray()
-        count = len(ui_elements)
+        ui_bytes = bytearray()
+        ui_sprite_bytes = bytearray()
+        ui_count = 0
+        ui_sprite_count = 0
         
         for ui_pos, ui_sprite in ui_elements:
-            if not ui_sprite.use_texture:
-                uv_x, uv_y, uv_w, uv_h = 0.0, 0.0, 1.0, 1.0
+            if ui_sprite.atlas_index >= 0:
+                ui_sprite_bytes.extend(struct.pack(
+                    "<ffff ffff ffff f f 8x",
+                    ui_pos.x, ui_pos.y,
+                    ui_pos.width, ui_pos.height,
+                    ui_sprite.color[0], ui_sprite.color[1],
+                    ui_sprite.color[2], ui_sprite.color[3],
+                    0.0, 0.0, 1.0, 1.0, # UV pre textúru
+                    1.0, float(ui_sprite.atlas_index)
+                ))
+                ui_sprite_count += 1
             else:
-                uv_x, uv_y, uv_w, uv_h = 0.0, 0.0, 1.0, 1.0 # UV pre textúru, prevezme sa neskôr z atlasu
-                
-            sprite_bytes.extend(struct.pack(
-                "<ffff ffff ffff f 12x",
-                ui_pos.x, ui_pos.y,
-                ui_pos.width, ui_pos.height,
-                ui_sprite.color[0], ui_sprite.color[1],
-                ui_sprite.color[2], ui_sprite.color[3],
-                uv_x, uv_y, uv_w, uv_h,
-                1.0 if ui_sprite.use_texture else 0.0
-            ))
+                ui_bytes.extend(struct.pack(
+                    "<ffff ffff ffff f 12x",
+                    ui_pos.x, ui_pos.y,
+                    ui_pos.width, ui_pos.height,
+                    ui_sprite.color[0], ui_sprite.color[1],
+                    ui_sprite.color[2], ui_sprite.color[3],
+                    0.0, 0.0, 1.0, 1.0,
+                    1.0 if ui_sprite.use_texture else 0.0
+                ))
+                ui_count += 1
             
-        return sprite_bytes, count
+        return ui_bytes, ui_count, ui_sprite_bytes, ui_sprite_count
 
 # =============================================================================
 # Numba warmup – kompilácia prebehne pri importe modulu, nie počas hrania
