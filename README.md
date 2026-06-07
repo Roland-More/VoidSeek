@@ -76,11 +76,10 @@ python src/main.py
 - **👁️ Seeker:** Vašou úlohou je eliminovať všetkých Runnerov predtým, než stihnú uniknúť.
   1. Ste o niečo rýchlejší ako Runneri.
   2. Kliknutím **Ľavým tlačidlom myši (LMB)** zaútočíte na Runnera, ktorý je vo vašej blízkosti.
-  3. Pozorne sledujte pohyb a zvuky ventilačiek, aby ste odhalili ich polohu.
 
 ### Mechaniky a Ovládanie
 
 - **Pohyb:** `W`, `A`, `S`, `D`
 - **Kamera:** Pohybom myši
 - **Útok (Iba Seeker):** `Ľavé tlačidlo myši`
-- **Interakcia s ventilačkou (Iba Runner):** Príďte k ventilačke a vstúpte do nej, ak nie je nablízku Seeker.
+- **Interakcia s ventilačkou (Iba Runner):** Príďte k ventilačke a vstúpte do nej.
