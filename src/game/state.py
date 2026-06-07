@@ -137,6 +137,9 @@ class GameplayScene(Scene):
         self.world.add_component(vent_entity, Interactible(enabled=is_active, on_interact=self.vent_hit))
 
     def vent_hit(self, world: World, player: int, entity: int):
+        if getattr(self, 'my_role', 'runner') == "seeker":
+            return
+            
         vent = world.get_component(entity, Vent)
         if not vent or not vent.is_open:
             return
@@ -249,7 +252,7 @@ class GameplayScene(Scene):
                     is_open = msg.get("is_open")
                     
                     for entity, (pos, vent_comp) in self.world.get_components(Position, Vent):
-                        if abs(pos.x - vent_x) < 0.1 and abs(pos.y - vent_y) < 0.1:
+                        if abs(pos.x + 0.5 - vent_x) < 0.1 and abs(pos.y + 0.5 - vent_y) < 0.1:
                             vent_comp.is_open = is_open
                             vent_comp.timer = 0.0
                             animator = self.world.get_component(entity, TextureAnimator)
@@ -270,6 +273,7 @@ class GameplayScene(Scene):
         """Odošli aktuálny input na server cez UDP."""
         if not self.udp_socket or not self.server_udp_address:
             return
+        rot = self.world.get_component(self.player_entity, Rotation)
         input_msg = {
             "type": "player_input",
             "id": self.my_player_id,
@@ -277,7 +281,7 @@ class GameplayScene(Scene):
             "backward": self.input.backward,
             "left": self.input.left,
             "right": self.input.right,
-            "mouse_dx": self.input.mouse_dx
+            "angle": rot.angle if rot else 0.0
         }
         try:
             raw = encode_udp(input_msg)
@@ -308,9 +312,15 @@ class GameplayScene(Scene):
                 pos = self.world.get_component(entity, Position)
                 rot = self.world.get_component(entity, Rotation)
                 if pos and rot:
-                    pos.x = p["x"]
-                    pos.y = p["y"]
-                    rot.angle = p["angle"]
+                    if pid == self.my_player_id:
+                        dist = math.sqrt((pos.x - p["x"])**2 + (pos.y - p["y"])**2)
+                        if dist > 1.0:
+                            pos.x = p["x"]
+                            pos.y = p["y"]
+                    else:
+                        pos.x = p["x"]
+                        pos.y = p["y"]
+                        rot.angle = p["angle"]
                     
         # Detekcia odpojených hráčov
         disconnected_pids = [pid for pid in self.network_entities if pid not in players_in_msg]
@@ -334,6 +344,8 @@ class GameplayScene(Scene):
 
     def _send_vent_request(self):
         """Pošli vent request na server cez TCP."""
+        if getattr(self, 'my_role', 'runner') == "seeker":
+            return
         if not self.tcp_socket:
             return
         pos = self.world.get_component(self.player_entity, Position)

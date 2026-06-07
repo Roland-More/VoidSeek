@@ -227,6 +227,8 @@ class GameServer:
             self.world.add_component(client.player_entity, Rotation(angle=math.pi/2.0))
             self.world.add_component(client.player_entity, Velocity(speed=1.95))
             self.world.add_component(client.player_entity, NetworkIdentity(player_id=client.client_id, role=role))
+            
+            client.assigned_role = role
                 
             players_data.append({
                 "id": client.client_id,
@@ -288,13 +290,14 @@ class GameServer:
         self.broadcast(init_data)
         
         for client in self.clients:
-            role = "seeker" if client.client_id == seeker_idx else "runner"
             try:
-                client.socket.sendall(encode_message({"type": "role_assign", "role": role}))
+                client.socket.sendall(encode_message({"type": "role_assign", "role": client.assigned_role}))
             except Exception:
                 pass
 
     def _handle_vent_request(self, client):
+        if getattr(client, 'assigned_role', 'runner') == "seeker":
+            return
         pos = self.world.get_component(client.player_entity, Position)
         rot = self.world.get_component(client.player_entity, Rotation)
         if not pos or not rot:
@@ -398,7 +401,7 @@ class GameServer:
                                         "backward": msg.get("backward", False),
                                         "left": msg.get("left", False),
                                         "right": msg.get("right", False),
-                                        "mouse_dx": msg.get("mouse_dx", 0.0)
+                                        "angle": msg.get("angle")
                                     }
                         except BlockingIOError:
                             break
@@ -413,8 +416,8 @@ class GameServer:
                         
                         if pos and rot and vel and net_id:
                             # Rotation
-                            rot.angle += client.input_state["mouse_dx"] * 0.0015
-                            client.input_state["mouse_dx"] = 0.0
+                            if client.input_state.get("angle") is not None:
+                                rot.angle = client.input_state["angle"]
                             
                             # Movement
                             dx, dy = 0.0, 0.0
