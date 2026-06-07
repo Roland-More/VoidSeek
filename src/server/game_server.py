@@ -353,7 +353,7 @@ class GameServer:
 
         from game.components import Portal
         for portal_ent, (p_pos, portal) in self.world.get_components(Position, Portal):
-            if math.dist((pos.x, pos.y), (p_pos.x, p_pos.y)) < 0.35:
+            if math.dist((pos.x, pos.y), (p_pos.x, p_pos.y)) < 0.45:
                 if not portal.is_open:
                     if getattr(client, 'has_key', False):
                         portal.is_open = True
@@ -430,6 +430,7 @@ class GameServer:
         seeker_spawns = []
         key_spawns = []
         portal_spawns = []
+        empty_spaces = []
 
         for y, row in enumerate(original_layout):
             for x, char in enumerate(row):
@@ -441,6 +442,8 @@ class GameServer:
                     key_spawns.append((x, y))
                 elif char == 'P':
                     portal_spawns.append((x, y))
+                elif char == '.':
+                    empty_spaces.append((x, y))
 
         if not runner_spawns: runner_spawns = [(1.5, 1.5)]
         if not seeker_spawns: seeker_spawns = [(6.5, 1.5)]
@@ -449,16 +452,31 @@ class GameServer:
         random.shuffle(seeker_spawns)
         random.shuffle(key_spawns)
         random.shuffle(portal_spawns)
+        random.shuffle(empty_spaces)
 
         seeker_idx = random.randint(0, len(self.clients) - 1) if self.clients else 0
         total_players = max(1, len(self.clients))
         num_runners = max(1, total_players - 1) if total_players > 1 else 1
         if len(self.clients) == 1 and seeker_idx == 0:
             num_runners = 0
+            
+        while len(runner_spawns) < num_runners and empty_spaces:
+            ex, ey = empty_spaces.pop()
+            runner_spawns.append((float(ex) + 0.5, float(ey) + 0.5))
 
         num_items = num_runners + 1
+        
         selected_keys = key_spawns[:num_items]
+        needed_keys = num_items - len(selected_keys)
+        for _ in range(needed_keys):
+            if empty_spaces:
+                selected_keys.append(empty_spaces.pop())
+                
         selected_portals = portal_spawns[:num_items]
+        needed_portals = num_items - len(selected_portals)
+        for _ in range(needed_portals):
+            if empty_spaces:
+                selected_portals.append(empty_spaces.pop())
 
         layout = []
         for y, row in enumerate(original_layout):
@@ -658,11 +676,17 @@ class GameServer:
             self.world.destroy_entity(client.player_entity)
 
             if self.state == "game":
-                print("[TCP] Hráč sa odpojil počas hry. Ukončujem hru a vraciam do lobby.")
-                self.state = "lobby"
-                for c in self.clients:
-                    c.is_ready = False
-                self.broadcast({"type": "game_over", "winner": "tie"})
+                runners_alive = sum(1 for c in self.clients if getattr(c, 'assigned_role', '') == 'runner' and not getattr(c, 'is_dead', False) and not getattr(c, 'escaped', False))
+                seekers = sum(1 for c in self.clients if getattr(c, 'assigned_role', '') == 'seeker')
+                
+                if runners_alive >= 1 and seekers >= 1:
+                    print(f"[TCP] Hráč {client.name} sa odpojil, ale hra pokračuje.")
+                else:
+                    print("[TCP] Hráč sa odpojil a hra nemôže pokračovať. Ukončujem hru.")
+                    self.state = "lobby"
+                    for c in self.clients:
+                        c.is_ready = False
+                    self.broadcast({"type": "game_over", "winner": "terminated"})
 
             if len(self.clients) == 0:
                 print("[Server] Všetci hráči sa odpojili, resetujem server...")
@@ -758,7 +782,7 @@ class GameServer:
                             if pos:
                                 from game.components import Key
                                 for key_ent, (k_pos, key_comp) in self.world.get_components(Position, Key):
-                                    if math.dist((pos.x, pos.y), (k_pos.x, k_pos.y)) < 0.3:
+                                    if math.dist((pos.x, pos.y), (k_pos.x, k_pos.y)) < 0.45:
                                         client.has_key = True
                                         self.world.destroy_entity(key_ent)
                                         try:

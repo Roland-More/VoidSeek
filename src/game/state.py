@@ -432,9 +432,9 @@ class GameplayScene(Scene):
                     
                     if self.portal_pos:
                         dist_to_portal = math.dist((pos.x, pos.y), self.portal_pos)
-                        if dist_to_portal < 0.35:
+                        if dist_to_portal < 0.45:
                             if not self.is_portal_open and getattr(self, 'has_key', False):
-                                ui_text = "Press E to unlock"
+                                ui_text = "Press E to unlock door"
                                 portal_interact = True
                             elif self.is_portal_open:
                                 ui_text = "Press E to enter"
@@ -461,7 +461,7 @@ class GameplayScene(Scene):
                         
             # 4. Ak E stlačené → pošli player_request cez TCP
             if self.input.interact:
-                if ui_text == "Press E to unlock" or ui_text == "Press E to enter":
+                if ui_text == "Press E to unlock door" or ui_text == "Press E to enter":
                     self._send_portal_request()
                 elif ui_text == "Press E to vent":
                     self._send_vent_request()

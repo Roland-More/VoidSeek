@@ -50,7 +50,7 @@ class RoomScene(Scene):
         disconnect_btn = self.world.create_entity()
         self.world.add_component(disconnect_btn, UIPosition(x=start_x + 112, y=bottom_y + 2, width=96, height=36, z_index=2))
         self.world.add_component(disconnect_btn, UIButton(
-            text="ODPOJIT",
+            text="DISCONNECT",
             on_click=self.disconnect,
             color_normal=(0.3, 0.0, 0.0, 1.0),
             color_hover=(0.5, 0.0, 0.0, 1.0)

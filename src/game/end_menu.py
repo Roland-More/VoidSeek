@@ -15,11 +15,14 @@ class EndMenuScene(Scene):
         winner = init_data.get("winner", "runner") if init_data else "runner"
         my_role = init_data.get("my_role", "runner") if init_data else "runner"
         
-        if my_role == winner:
-            result_text = "VYHRAL SI!"
+        if winner == "terminated":
+            result_text = "MATCH TERMINATED"
+            color = (1.0, 0.8, 0.2, 1.0)
+        elif my_role == winner:
+            result_text = "YOU WON!"
             color = (0.2, 1.0, 0.2, 1.0)
         else:
-            result_text = "PREHRAL SI!"
+            result_text = "YOU LOST!"
             color = (1.0, 0.2, 0.2, 1.0)
             
         self.world.add_component(self.world.create_entity(), TextEntity(
@@ -35,7 +38,7 @@ class EndMenuScene(Scene):
         btn_quit = self.world.create_entity()
         self.world.add_component(btn_quit, UIPosition(x=center_x - 96, y=quit_y + 4, width=192, height=42, z_index=2))
         self.world.add_component(btn_quit, UIButton(
-            text="NAVRAT DO MENU",
+            text="RETURN TO MENU",
             on_click=lambda: self.scene_manager.switch_to("menu"),
             color_normal=(0.3, 0.0, 0.0, 1.0),
             color_hover=(0.5, 0.0, 0.0, 1.0)

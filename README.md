@@ -56,5 +56,31 @@ pip install -r requirements.txt
 Uistite sa, že máte aktivované virtuálne prostredie `(.venv)` a spustite aplikáciu:
 
 ```powershell
-python main.py
+python src/main.py
 ```
+
+---
+
+## Ako hrať VoidSeek
+
+**VoidSeek** je asymetrická multiplayerová hra (1 vs X), v ktorej sa hráči delia na dve role: **Seeker (Hľadač)** a **Runner (Bežec)**.
+
+### Cieľ hry
+
+- **🏃‍♂️ Runneri:** Vašou úlohou je utiecť z mapy. Aby ste to dokázali, musíte:
+  1. Nájsť a zobrať **kľúč (Key)**.
+  2. S kľúčom nájsť **portál (Portal)** a odomknúť ho.
+  3. Prejsť otvoreným portálom a uniknúť (Escape).
+  4. Ak ste v úzkych, môžete sa skrývať a využívať **ventilačné šachty (Vents)** na rýchly presun po mape. Vyhýbajte sa Seekerovi za každú cenu!
+
+- **👁️ Seeker:** Vašou úlohou je eliminovať všetkých Runnerov predtým, než stihnú uniknúť.
+  1. Ste o niečo rýchlejší ako Runneri.
+  2. Kliknutím **Ľavým tlačidlom myši (LMB)** zaútočíte na Runnera, ktorý je vo vašej blízkosti.
+  3. Pozorne sledujte pohyb a zvuky ventilačiek, aby ste odhalili ich polohu.
+
+### Mechaniky a Ovládanie
+
+- **Pohyb:** `W`, `A`, `S`, `D`
+- **Kamera:** Pohybom myši
+- **Útok (Iba Seeker):** `Ľavé tlačidlo myši`
+- **Interakcia s ventilačkou (Iba Runner):** Príďte k ventilačke a vstúpte do nej, ak nie je nablízku Seeker.

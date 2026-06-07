@@ -27,7 +27,7 @@ class MenuScene(Scene):
         self.name_input = self.world.create_entity()
         self.world.add_component(self.name_input, UIPosition(x=center_x - 96, y=name_y + 4, width=192, height=32, z_index=2))
         self.world.add_component(self.name_input, UITextInput(
-            placeholder="Meno Hraca", text=f"Player{random.randint(1, 999)}", max_length=13,
+            placeholder="Player Name", text=f"Player{random.randint(1, 999)}", max_length=13,
             color_normal=(0.2, 0.0, 0.0, 1.0), color_active=(0.4, 0.0, 0.0, 1.0)
         ))
         
@@ -40,7 +40,7 @@ class MenuScene(Scene):
         btn_servers = self.world.create_entity()
         self.world.add_component(btn_servers, UIPosition(x=center_x - 96, y=servers_y + 4, width=192, height=42, z_index=2))
         self.world.add_component(btn_servers, UIButton(
-            text="HLADAT SERVERY",
+            text="FIND SERVERS",
             on_click=self.goto_servers,
             color_normal=(0.3, 0.0, 0.0, 1.0),
             color_hover=(0.5, 0.0, 0.0, 1.0)
@@ -55,7 +55,7 @@ class MenuScene(Scene):
         btn_quit = self.world.create_entity()
         self.world.add_component(btn_quit, UIPosition(x=center_x - 96, y=quit_y + 4, width=192, height=42, z_index=2))
         self.world.add_component(btn_quit, UIButton(
-            text="UKONCIT",
+            text="QUIT",
             on_click=lambda: self.renderer.canvas.close(),
             color_normal=(0.3, 0.0, 0.0, 1.0),
             color_hover=(0.5, 0.0, 0.0, 1.0)
@@ -63,7 +63,7 @@ class MenuScene(Scene):
 
     def goto_servers(self):
         inp = self.world.get_component(self.name_input, UITextInput)
-        name = inp.text.strip() if inp.text else "BezMena"
+        name = inp.text.strip() if inp.text else "NoName"
         if len(name) < 3:
             name = (name + "xyz")[:3]
         elif len(name) > 13:

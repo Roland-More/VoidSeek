@@ -47,7 +47,7 @@ class ServerListScene(Scene):
         
         # Static UI
         title_entity = self.world.create_entity()
-        self.world.add_component(title_entity, TextEntity(text="ZOZNAM SERVEROV", x=center_x, y=RENDER_HEIGHT * 0.1, size=0.5, color=(1.0, 1.0, 1.0, 1.0), alignment="center"))
+        self.world.add_component(title_entity, TextEntity(text="SERVER LIST", x=center_x, y=RENDER_HEIGHT * 0.1, size=0.5, color=(1.0, 1.0, 1.0, 1.0), alignment="center"))
         
         bottom_y = RENDER_HEIGHT * 0.85
         total_width = 190 + 10 + 100 + 10 + 80  # 390
@@ -72,7 +72,7 @@ class ServerListScene(Scene):
         connect_btn = self.world.create_entity()
         self.world.add_component(connect_btn, UIPosition(x=start_x + 202, y=bottom_y + 2, width=96, height=36, z_index=2))
         self.world.add_component(connect_btn, UIButton(
-            text="PRIPOJIT",
+            text="CONNECT",
             on_click=lambda: self.connect_manual(self.world.get_component(self.input_entity, UITextInput).text),
             color_normal=(0.3, 0.0, 0.0, 1.0),
             color_hover=(0.5, 0.0, 0.0, 1.0)
@@ -86,7 +86,7 @@ class ServerListScene(Scene):
         back_btn = self.world.create_entity()
         self.world.add_component(back_btn, UIPosition(x=start_x + 312, y=bottom_y + 2, width=76, height=36, z_index=2))
         self.world.add_component(back_btn, UIButton(
-            text="SPAT",
+            text="BACK",
             on_click=lambda: self.scene_manager.switch_to("menu"),
             color_normal=(0.3, 0.0, 0.0, 1.0),
             color_hover=(0.5, 0.0, 0.0, 1.0)
