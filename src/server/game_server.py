@@ -395,7 +395,7 @@ class GameServer:
                 dy = v_pos.y - pos.y
                 dist = math.sqrt(dx*dx + dy*dy)
 
-                if dist <= 0.5:
+                if dist <= attack_dist:
                     if dist > 0.0:
                         hit_mx, hit_my, hit_dist = _dda_raycast(pos.x, pos.y, dx/dist, dy/dist, walls_arr, self.map_manager.width, self.map_manager.height, dist)
                         if hit_dist >= dist - 0.5:
@@ -561,6 +561,10 @@ class GameServer:
                 pos.y = spawn_y
 
             from game.components import SphereCollider
+            for comp_type in [Rotation, Velocity, NetworkIdentity, SphereCollider]:
+                existing = self.world.get_component(client.player_entity, comp_type)
+                if existing is not None:
+                    self.world.remove_component(client.player_entity, comp_type)
             vel_speed = 1.95 * 1.25 if role == "seeker" else 1.95
             self.world.add_component(client.player_entity, Rotation(angle=math.pi/2.0))
             self.world.add_component(client.player_entity, Velocity(speed=vel_speed))
@@ -749,11 +753,13 @@ class GameServer:
             self._disconnect_client(client)
 
     def _process_pending_requests(self, tick_duration):
-        for client in list(self.clients):
-            with self._tick_lock:
-                requests = list(client.pending_requests)
+        with self._tick_lock:
+            all_requests = []
+            for client in list(self.clients):
+                all_requests.append((client, list(client.pending_requests)))
                 client.pending_requests.clear()
 
+        for client, requests in all_requests:
             for req in requests:
                 action = req.get("action")
                 if action == "attack":
@@ -820,10 +826,10 @@ class GameServer:
                                         picked_key_entities.add(key_ent)
                                         self.world.destroy_entity(key_ent)
                                         try:
-                                            client.socket.sendall(encode_message({"type": "key_picked"}))
+                                            client.socket.sendall(encode_message({"type": "key_picked", "x": k_pos.x, "y": k_pos.y}))
                                         except:
                                             pass
-                                        self.broadcast({"type": "key_removed"})
+                                        self.broadcast({"type": "key_removed", "x": k_pos.x, "y": k_pos.y})
                                         break
 
                     player_data = []

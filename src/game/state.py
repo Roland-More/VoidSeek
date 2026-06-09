@@ -374,18 +374,21 @@ class GameplayScene(Scene):
             input_to_system.mouse_dx = 0.0
             
         if self.attack_queue:
-            if self.my_role == "seeker" and animator:
-                if getattr(self, 'attack_cooldown', 0.0) <= 0.0:
+            if self.my_role == "seeker" and self.player_entity is not None:
+                from .components import SpriteAnimator as _SpriteAnimator
+                animator = self.world.get_component(self.player_entity, _SpriteAnimator)
+                if animator and self.attack_cooldown <= 0.0:
                     self.attack_queue.clear()
                     animator.current_animation = "attack"
                     animator.playback_state = PlaybackState.PLAYING
                     animator.current_frame = 0
                     animator.timer = 0.0
-                    self.attack_cooldown = 1.5 # 1.5s cooldown pre utok
-                    
+                    self.attack_cooldown = 1.5
                     if self.tcp_socket:
-                        try: self.tcp_socket.sendall(encode_message({"type": "player_request", "action": "attack"}))
-                        except OSError: self._handle_disconnect()
+                        try:
+                            self.tcp_socket.sendall(encode_message({"type": "player_request", "action": "attack"}))
+                        except OSError:
+                            self._handle_disconnect()
             else:
                 self.attack_queue.clear()
             
@@ -607,8 +610,18 @@ class GameplayScene(Scene):
                 self.scene_manager.register("end_menu", EndMenuScene(self.renderer, self.scene_manager, init_data={"winner": winner, "my_role": getattr(self, 'my_role', 'runner')}))
                 self.scene_manager.switch_to("end_menu")
             elif msg_type == "key_removed":
-                # Zmaž prvý zostávajúci kľúč zo zoznamu
-                if self.key_entities_3d:
+                rx, ry = msg.get("x"), msg.get("y")
+                if rx is not None and ry is not None:
+                    for ent in list(self.key_entities_3d):
+                        kpos = self.world.get_component(ent, Position)
+                        if kpos and abs(kpos.x - rx) < 0.1 and abs(kpos.y - ry) < 0.1:
+                            self.key_entities_3d.remove(ent)
+                            try:
+                                self.world.destroy_entity(ent)
+                            except:
+                                pass
+                            break
+                elif self.key_entities_3d:
                     ent = self.key_entities_3d.pop(0)
                     try:
                         self.world.destroy_entity(ent)
@@ -616,8 +629,18 @@ class GameplayScene(Scene):
                         pass
             elif msg_type == "key_picked":
                 self.has_key = True
-                # Zmaž prvý zostávajúci kľúč zo zoznamu (ten čo sme zobrali)
-                if self.key_entities_3d:
+                rx, ry = msg.get("x"), msg.get("y")
+                if rx is not None and ry is not None:
+                    for ent in list(self.key_entities_3d):
+                        kpos = self.world.get_component(ent, Position)
+                        if kpos and abs(kpos.x - rx) < 0.1 and abs(kpos.y - ry) < 0.1:
+                            self.key_entities_3d.remove(ent)
+                            try:
+                                self.world.destroy_entity(ent)
+                            except:
+                                pass
+                            break
+                elif self.key_entities_3d:
                     ent = self.key_entities_3d.pop(0)
                     try:
                         self.world.destroy_entity(ent)

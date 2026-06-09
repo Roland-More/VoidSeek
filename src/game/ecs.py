@@ -21,6 +21,11 @@ class World:
     def get_component(self, entity: int, comp_type: Type[T]) -> T | None:
         return self._components.get(comp_type, {}).get(entity)
 
+    def remove_component(self, entity: int, comp_type: Type):
+        store = self._components.get(comp_type)
+        if store and entity in store:
+            del store[entity]
+
     def destroy_entity(self, entity: int):
         for comp_type in self._components:
             if entity in self._components[comp_type]:
