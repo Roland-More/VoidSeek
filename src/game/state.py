@@ -604,8 +604,10 @@ class GameplayScene(Scene):
                 self.renderer.set_cursor_locked(False)
                 if self.tcp_socket:
                     self.tcp_socket.close()
+                    self.tcp_socket = None
                 if self.udp_socket:
                     self.udp_socket.close()
+                    self.udp_socket = None
                 from .end_menu import EndMenuScene
                 self.scene_manager.register("end_menu", EndMenuScene(self.renderer, self.scene_manager, init_data={"winner": winner, "my_role": getattr(self, 'my_role', 'runner')}))
                 self.scene_manager.switch_to("end_menu")
