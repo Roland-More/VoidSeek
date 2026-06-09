@@ -352,8 +352,8 @@ class GameplayScene(Scene):
 
     def update(self, delta_time: float):
         # 1. PRIJMI správy zo servera
-        self._recv_udp()
         self._recv_tcp()
+        self._recv_udp()
 
         from .components import SpriteAnimator, Sprite
         animator = self.world.get_component(self.player_entity, SpriteAnimator) if self.player_entity else None
