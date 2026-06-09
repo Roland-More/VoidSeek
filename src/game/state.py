@@ -628,7 +628,6 @@ class GameplayScene(Scene):
                     except:
                         pass
             elif msg_type == "key_picked":
-                self.has_key = True
                 rx, ry = msg.get("x"), msg.get("y")
                 if rx is not None and ry is not None:
                     for ent in list(self.key_entities_3d):
@@ -646,11 +645,13 @@ class GameplayScene(Scene):
                         self.world.destroy_entity(ent)
                     except:
                         pass
-                from game.components import UIPosition, UISprite
-                self.key_ui_entity = self.world.create_entity()
-                # Zobrazíme klúč vpravo hore
-                self.world.add_component(self.key_ui_entity, UIPosition(x=RENDER_WIDTH - 80, y=20, width=64, height=64, z_index=10))
-                self.world.add_component(self.key_ui_entity, UISprite(use_texture=True, atlas_index=50))
+                if msg.get("player_id") == self.my_player_id:
+                    self.has_key = True
+                    from game.components import UIPosition, UISprite
+                    self.key_ui_entity = self.world.create_entity()
+                    # Zobrazíme klúč vpravo hore
+                    self.world.add_component(self.key_ui_entity, UIPosition(x=RENDER_WIDTH - 80, y=20, width=64, height=64, z_index=10))
+                    self.world.add_component(self.key_ui_entity, UISprite(use_texture=True, atlas_index=50))
             elif msg_type == "portal_opened":
                 self.is_portal_open = True
                 if self.portal_entity:
@@ -658,6 +659,14 @@ class GameplayScene(Scene):
                     if sprite:
                         sprite.atlas_index_front = 49
                         sprite.atlas_index_back = 49
+                if msg.get("player_id") == self.my_player_id:
+                    self.has_key = False
+                    if getattr(self, 'key_ui_entity', None) is not None:
+                        try:
+                            self.world.destroy_entity(self.key_ui_entity)
+                        except:
+                            pass
+                        self.key_ui_entity = None
             elif msg_type == "player_escaped":
                 pid = msg.get("player_id")
                 if pid == self.my_player_id:

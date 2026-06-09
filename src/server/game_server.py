@@ -360,7 +360,11 @@ class GameServer:
                 if not portal.is_open:
                     if getattr(client, 'has_key', False):
                         portal.is_open = True
-                        self.broadcast({"type": "portal_opened", "portal_x": p_pos.x, "portal_y": p_pos.y})
+                        client.has_key = False
+                        print(f"[Game] Hráč '{client.name}' otvoril portál na ({p_pos.x}, {p_pos.y})")
+                        self.broadcast({"type": "portal_opened", "portal_x": p_pos.x, "portal_y": p_pos.y, "player_id": client.client_id})
+                    else:
+                        print(f"[Game] Hráč '{client.name}' sa pokúsil otvoriť portál, ale nemá kľúč!")
                 else:
                     client.escaped = True
                     self.broadcast({"type": "player_escaped", "player_id": client.client_id})
@@ -818,18 +822,14 @@ class GameServer:
                             if pos:
                                 from game.components import Key
                                 for key_ent, (k_pos, key_comp) in self.world.get_components(Position, Key):
-                                    # Preskočíme kľúče, ktoré boli zdvihnuté iným hráčom v tomto tiku
                                     if key_ent in picked_key_entities:
                                         continue
                                     if math.dist((pos.x, pos.y), (k_pos.x, k_pos.y)) < 0.45:
                                         client.has_key = True
                                         picked_key_entities.add(key_ent)
                                         self.world.destroy_entity(key_ent)
-                                        try:
-                                            client.socket.sendall(encode_message({"type": "key_picked", "x": k_pos.x, "y": k_pos.y}))
-                                        except:
-                                            pass
-                                        self.broadcast({"type": "key_removed", "x": k_pos.x, "y": k_pos.y})
+                                        print(f"[Game] Hráč '{client.name}' (id={client.client_id}) zobral kľúč na pozícii ({k_pos.x}, {k_pos.y})")
+                                        self.broadcast({"type": "key_picked", "player_id": client.client_id, "x": k_pos.x, "y": k_pos.y})
                                         break
 
                     player_data = []
