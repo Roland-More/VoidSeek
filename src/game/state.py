@@ -32,7 +32,7 @@ class GameplayScene(Scene):
         self.portal_entity = None
         self.portal_pos = None
         self.spectate_target_id = None
-        self.attack_queue = []
+        self.attack_pressed = False
         self.target_positions = {}
         self.target_angles = {}
         self._missing_ticks: dict[int, int] = {}  # pid -> počet tickov bez správy
@@ -263,7 +263,7 @@ class GameplayScene(Scene):
         if event.get("button", 1) != 1:
             return
         if not getattr(self, 'is_paused', False):
-            self.attack_queue.append(True)
+            self.attack_pressed = True
 
     def handle_key_down(self, key: str):
         if key == "escape":
@@ -373,12 +373,12 @@ class GameplayScene(Scene):
             input_to_system.right = False
             input_to_system.mouse_dx = 0.0
             
-        if self.attack_queue:
+        if self.attack_pressed:
+            self.attack_pressed = False  # Always consume immediately — no buffering
             if self.my_role == "seeker" and self.player_entity is not None:
                 from .components import SpriteAnimator as _SpriteAnimator
                 animator = self.world.get_component(self.player_entity, _SpriteAnimator)
                 if animator and self.attack_cooldown <= 0.0:
-                    self.attack_queue.clear()
                     animator.current_animation = "attack"
                     animator.playback_state = PlaybackState.PLAYING
                     animator.current_frame = 0
@@ -389,8 +389,6 @@ class GameplayScene(Scene):
                             self.tcp_socket.sendall(encode_message({"type": "player_request", "action": "attack"}))
                         except OSError:
                             self._handle_disconnect()
-            else:
-                self.attack_queue.clear()
             
         is_attack_frozen = getattr(self, 'attack_cooldown', 0.0) > (1.5 - 0.72) # Prvých 0.72s sa nemoze hybat
             
@@ -545,7 +543,7 @@ class GameplayScene(Scene):
                     if msg_tick >= self.server_tick:
                         self.server_tick = msg_tick
                         latest_msg = msg
-            except BlockingIOError:
+            except (BlockingIOError, OSError):
                 break
         if latest_msg:
             self._apply_game_state(latest_msg)
@@ -757,7 +755,7 @@ class GameplayScene(Scene):
                             move_dist_sq = (pos.x - target_x)**2 + (pos.y - target_y)**2
                         
                         remote_animator = self.world.get_component(entity, SpriteAnimator)
-                        if remote_animator and (remote_animator.current_animation != "attack" or remote_animator.playback_state != PlaybackState.PLAYING):
+                        if remote_animator and remote_animator.current_animation != "attack":
                             if move_dist_sq > 0.0001:
                                 if remote_animator.current_animation != "walking" or remote_animator.playback_state != PlaybackState.PLAYING:
                                     remote_animator.current_animation = "walking"
