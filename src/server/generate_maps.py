@@ -1,3 +1,4 @@
+import os
 import json
 import random
 
@@ -119,7 +120,7 @@ def place_vents(grid, width, height):
             if vents_placed >= max_vents:
                 break
 
-def place_entities(grid, width, height):
+def place_entities(grid, width, height, target_size=64):
     empty_cells = []
     for y in range(1, height - 1):
         for x in range(1, width - 1):
@@ -153,9 +154,19 @@ def place_entities(grid, width, height):
     random.shuffle(empty_cells)
     
     # Place Keys
-    for _ in range(10):
-        x, y = empty_cells.pop()
-        grid[y][x] = 'K'
+    if target_size == 32:
+        num_keys = 4
+    elif target_size == 64:
+        num_keys = 8
+    elif target_size == 96:
+        num_keys = 12
+    else:
+        num_keys = 10
+        
+    for _ in range(num_keys):
+        if empty_cells:
+            x, y = empty_cells.pop()
+            grid[y][x] = 'K'
         
     # Place Portals
     for _ in range(10):
@@ -163,11 +174,6 @@ def place_entities(grid, width, height):
         grid[y][x] = 'P'
 
 def generate_full_map(target_size):
-    """Generate a map of the given target_size (64 or 96).
-    
-    Maze generation requires odd dimensions, so we generate at (target_size - 1)
-    and pad by 1 row/column of walls to reach the target_size.
-    """
     # Maze needs odd dimensions
     maze_w = target_size - 1  # e.g. 63 or 95
     maze_h = target_size - 1
@@ -182,7 +188,7 @@ def generate_full_map(target_size):
     create_loops(grid, maze_w, maze_h)
     create_rooms(grid, maze_w, maze_h)
     place_vents(grid, maze_w, maze_h)
-    place_entities(grid, maze_w, maze_h)
+    place_entities(grid, maze_w, maze_h, target_size)
     
     # Pad to target_size x target_size
     pad_cols = target_size - maze_w
@@ -197,14 +203,16 @@ def generate_full_map(target_size):
     return [''.join(row) for row in grid]
 
 if __name__ == "__main__":
+    out_dir = os.path.dirname(os.path.abspath(__file__))
+
     maps_32 = []
     for i in range(5):
         print(f"Generating 32x32 map {i+1}/5...")
         maps_32.append(generate_full_map(32))
         
-    with open("maps_32.json", "w") as f:
+    with open(os.path.join(out_dir, "maps_32.json"), "w") as f:
         json.dump(maps_32, f)
-    print("Successfully generated maps_32.json!")
+    print("Successfully generated maps_32.json in src/server/!")
 
     # Generate 5 maps of 64x64
     maps_64 = []
@@ -212,9 +220,9 @@ if __name__ == "__main__":
         print(f"Generating 64x64 map {i+1}/5...")
         maps_64.append(generate_full_map(64))
         
-    with open("maps_64.json", "w") as f:
+    with open(os.path.join(out_dir, "maps_64.json"), "w") as f:
         json.dump(maps_64, f)
-    print("Successfully generated maps_64.json!")
+    print("Successfully generated maps_64.json in src/server/!")
 
     # Generate 5 maps of 96x96
     maps_96 = []
@@ -222,6 +230,6 @@ if __name__ == "__main__":
         print(f"Generating 96x96 map {i+1}/5...")
         maps_96.append(generate_full_map(96))
         
-    with open("maps_96.json", "w") as f:
+    with open(os.path.join(out_dir, "maps_96.json"), "w") as f:
         json.dump(maps_96, f)
-    print("Successfully generated maps_96.json!")
+    print("Successfully generated maps_96.json in src/server/!")
