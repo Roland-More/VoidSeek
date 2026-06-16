@@ -1,14 +1,28 @@
 import struct
 import array
 import ctypes
+import glfw
+import platform
 from enum import Enum, auto
 
 MAX_MAP_WIDTH = 128
 MAX_MAP_HEIGHT = 128
 MAX_MAP_TILES = 16384
 TILE_SIZE = 64
-user32 = ctypes.windll.user32
-RENDER_WIDTH, RENDER_HEIGHT = user32.GetSystemMetrics(0) // 4, user32.GetSystemMetrics(1) // 4
+
+if platform.system() == "Windows":
+    user32 = ctypes.windll.user32
+    RENDER_WIDTH, RENDER_HEIGHT = user32.GetSystemMetrics(0) // 4, user32.GetSystemMetrics(1) // 4
+else:
+    if glfw.init():
+            monitor = glfw.get_primary_monitor()
+            if monitor:
+                mode = glfw.get_video_mode(monitor)
+                # mode.size contains (width, height) of the monitor
+                RENDER_WIDTH = mode.size.width // 4
+                RENDER_HEIGHT = mode.size.height // 4
+            glfw.terminate() # Clean up since this is just a definitions file
+
 MAX_SPRITES = 4096
 
 class BindScope(Enum):

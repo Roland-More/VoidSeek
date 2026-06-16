@@ -1,5 +1,7 @@
 import sys
 import ctypes
+import glfw
+import platform
 
 try:
     # Upozorníme Windows, že sme DPI aware, aby nám plátno neorezával/neškáloval
@@ -11,10 +13,18 @@ import wgpu
 from core.renderer import Renderer
 from rendercanvas.auto import loop
 
+if platform.system() == "Windows":
 # Získanie rozlíšenia obrazovky (pre Windows) a zmenšenie na štvrtinu
-user32 = ctypes.windll.user32
-WIDTH, HEIGHT = user32.GetSystemMetrics(0) // 4, user32.GetSystemMetrics(1) // 4
-
+    user32 = ctypes.windll.user32
+    WIDTH, HEIGHT = user32.GetSystemMetrics(0) // 4, user32.GetSystemMetrics(1) // 4
+else:
+    if glfw.init():
+            monitor = glfw.get_primary_monitor()
+            if monitor:
+                mode = glfw.get_video_mode(monitor)
+                # mode.size contains (width, height) of the monitor
+                WIDTH = mode.size.width // 4
+                HEIGHT = mode.size.height // 4
 
 def main():
     # Inicializácia WGPU Rendereru (ktorý už interné rieši plátno aj vykresľovanie)
